@@ -1,0 +1,101 @@
+### Python project ignore rules
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*.pyd
+*.pyc
+
+# Build / packaging outputs
+build/
+dist/
+dist_nuitka/
+pip-wheel-metadata/
+*.egg
+*.egg-info/
+*.dist-info/
+.eggs/
+
+# Project generated executables/installers
+*.exe
+*.msi
+
+# Packager spec files (keep curated one)
+*.spec
+!scripts/app.spec
+
+# Logs and crash reports
+*.log
+nuitka-crash-report.xml
+旧版/nuitka-crash-report.xml
+
+# Test / tooling caches
+.coverage*
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# Project-specific build artifacts
+dist_nuitka/
+旧版/*.exe
+旧版/*.spec
+旧版/
+
+# IDE / editor configs
+.vscode/
+.idea/
+.vs/
+.agents/
+.codex/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Office temporary files (Excel/Word)
+~$*
+
+# Backup / temp files
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.swp
+*.swo
+
+# Nuitka intermediate (clarity; parent dir already ignored)
+dist_nuitka/run.build/
+dist_nuitka/run.dist/
+__nuitka_cache__/
+
+# Native build by-products (Windows/MSVC/MinGW)
+*.dll
+*.so
+*.pdb
+*.lib
+*.a
+*.o
+*.obj
+*.exp
+*.ilk
+*.manifest
+
+# Windows metadata
+desktop.ini
+
+# Generic caches
+.cache/
+.ruff_cache/
+
+# Alternate venv name
+env/

@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataset-comparator"
+version = "1.6.3"
+description = "高效的数据集比对工具，支持大文件处理和多种比对模式"
+readme = "README.md"
+authors = [
+    {name = "开发团队", email = "dev@example.com"}
+]
+maintainers = [
+    {name = "开发团队", email = "dev@example.com"}
+]
+keywords = ["dataset", "comparison", "excel", "data-analysis"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Office/Business :: Office Suites",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pandas>=1.3.0,<3.0.0",
+    "numpy>=1.20.0,<2.0.0",
+    "openpyxl>=3.0.0,<4.0.0",
+    "ttkbootstrap>=1.10.0",
+    "pywin32>=305; sys_platform == 'win32'",
+    "appdirs>=1.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "black>=21.0.0",
+    "flake8>=3.9.0",
+    "isort>=5.0.0",
+]
+performance = [
+    "xlrd>=2.0.0",
+    "xlsxwriter>=3.0.0",
+    "psutil>=5.8.0",
+]
+build = [
+    "pyinstaller>=5.0",
+    "nuitka>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/dataset-comparator"
+Documentation = "https://github.com/your-org/dataset-comparator#readme"
+Repository = "https://github.com/your-org/dataset-comparator.git"
+"Bug Reports" = "https://github.com/your-org/dataset-comparator/issues"
+
+[project.scripts]
+dataset-comparator = "src.main:main"
+
+[project.gui-scripts]
+dataset-comparator-gui = "src.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.ico", "*.json", "*.md"]
+
+# 构建配置
+[tool.pyinstaller]
+entry-point = "src/main.py"
+icon = "src/assets/icons/app_icon.ico"
+onefile = true
+windowed = true
+hidden-imports = [
+    "pandas",
+    "numpy",
+    "openpyxl",
+    "tkinter",
+    "threading",
+    "queue",
+    "json",
+    "concurrent.futures",
+]
+
+# 代码质量工具配置
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+] 
