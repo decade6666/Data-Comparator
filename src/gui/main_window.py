@@ -15,35 +15,45 @@ import warnings # 导入warnings模块
 warnings.filterwarnings("ignore", category=UserWarning, module='openpyxl.styles.stylesheet')
 
 # 导入重构后的模块
-from ..utils.gui_update_manager import GUIUpdateManager, GUIUpdateType
+from ..backend.application.processing_service import (
+    apply_processing_paths,
+    build_output_path,
+    resolve_log_directory,
+    sanitize_output_name,
+    validate_processing_paths,
+)
+from ..backend.infrastructure.file_runtime import (
+    cleanup_nofilter_files,
+    get_app_temp_dir,
+    validate_excel_file,
+)
+from ..frontend.gui_update_manager import GUIUpdateManager, GUIUpdateType
+from ..frontend.window_utils import set_window_icon
 from .parameter_manager import ParameterManager, BUILTIN_TEMPLATE_CIMS, BUILTIN_TEMPLATE_TM
-from ..utils.file_utils import set_window_icon, validate_excel_file, get_sheet_names, read_single_sheet_from_excel, check_and_remove_file_protection, reorder_columns_with_update_mark_first, get_resource_path, remove_auto_filters_from_xlsx, cleanup_nofilter_files, get_app_temp_dir
 # 导入对话框函数
 from .dialogs.error_dialog import show_file_error_dialog
 from .dialogs.help_dialog import show_help
 
-from ..utils.progress_manager import ThreadSafeProgressManager
-from ..utils.logger import log # 更新导入路径
-from ..core.data_comparison import process_single_sheet_complete, perform_full_comparison, process_missing_sheet, process_new_sheet, create_anchor_by_sas_names, compare_columns_by_sas_names, process_edc_multithreaded
-from ..core.excel_utils import replace_worksheet_headers, apply_highlight_to_worksheet
+from ..shared.log_utils import log
+from ..backend.domain.excel_utils import replace_worksheet_headers, apply_highlight_to_worksheet
+from ..backend.domain.data_comparison import (
+    compare_columns_by_sas_names,
+    create_anchor_by_sas_names,
+    perform_full_comparison,
+    process_edc_multithreaded,
+    process_missing_sheet,
+    process_new_sheet,
+    process_single_sheet_complete,
+)
 from .components.parameter_card_frame import ParameterCardFrame
 from .components.scrollable_frame import ScrollableFrame
 from .components.top_operations_bar import TopOperationsBar
 
-# 从原始文件导入 ConfigManager 和 HighlightOptimizer (假设它们已从原始文件独立出来)
-from ..utils.config_manager import ConfigManager
-from ..utils.highlight_optimizer import HighlightOptimizer
+from ..backend.infrastructure.config_manager import ConfigManager
+from ..backend.domain.highlight_optimizer import HighlightOptimizer
 
 # 确保 HighlightOptimizer 在这里被实例化为全局变量，就像它在原始文件中一样
 highlight_optimizer = HighlightOptimizer()
-
-# 新增：文件名清理工具，确保配置名称可安全用于文件名
-def _sanitize_filename(name: str) -> str:
-    invalid = '\\/:*?"<>|\n\r\t'
-    sanitized = ''.join(('-' if ch in invalid else ch) for ch in (name or '').strip())
-    # 去除前后空格与多余的连字符
-    sanitized = '-'.join([seg for seg in sanitized.split('-') if seg])
-    return sanitized or '默认配置'
 
 class _ListEditorDialog(tk.Toplevel):
     """一个通用的、用于编辑列表参数的对话框。"""
@@ -820,7 +830,7 @@ class DatasetComparatorGUI:
             # 生成日志文件名：配置名称-比对日志-生成时间
             current_time = self.start_time.strftime("%Y-%m-%dT%H-%M-%S")
             config_name = getattr(self.parameter_manager, 'current_config_name', '') or ''
-            safe_name = _sanitize_filename(config_name)
+            safe_name = sanitize_output_name(config_name)
             log_filename = f"{safe_name}-比对日志-{current_time}.txt"
             self.log_file_path = os.path.join(output_dir, log_filename).replace('\\', '/')
 
@@ -975,32 +985,13 @@ class DatasetComparatorGUI:
                 if not self._copy_template_before_processing():
                     return  # 复制失败，停止处理
         
-        # 先验证路径信息
         current_params = self._collect_current_gui_parameters()
-        old_path = current_params.get('old_file_path', '')
-        new_path = current_params.get('new_file_path', '')
-        output_dir = current_params.get('output_directory', '')
-        
-        # 验证路径是否为空
-        if not all([old_path, new_path, output_dir]):
-            self.log_message("请填写所有必要的路径信息", 'ERROR')
-            messagebox.showerror("错误", "请填写所有必要的路径信息")
+        try:
+            processing_paths = validate_processing_paths(current_params)
+        except (ValueError, FileNotFoundError, OSError) as exc:
+            self.log_message(str(exc), 'ERROR')
+            messagebox.showerror("错误", str(exc))
             return
-        
-        # 验证文件是否存在
-        if not os.path.exists(old_path) or not os.path.exists(new_path):
-            self.log_message("输入文件不存在", 'ERROR')
-            messagebox.showerror("错误", "输入文件不存在")
-            return
-        
-        # 确保输出目录存在
-        if not os.path.exists(output_dir):
-            try:
-                os.makedirs(output_dir)
-            except Exception as e:
-                self.log_message(f"创建输出目录失败: {e}", 'ERROR')
-                messagebox.showerror("错误", f"创建输出目录失败: {e}")
-                return
         
         # 路径验证通过后，再保存配置
         try:
@@ -1041,8 +1032,11 @@ class DatasetComparatorGUI:
         except Exception:
             pass
         
-        # 将验证过的路径信息传递给处理线程
-        threading.Thread(target=self._processing_thread, args=(old_path, new_path, output_dir), daemon=True).start()
+        threading.Thread(
+            target=self._processing_thread,
+            args=(processing_paths,),
+            daemon=True,
+        ).start()
 
     def stop_processing(self):
         """Stop processing"""
@@ -1051,24 +1045,17 @@ class DatasetComparatorGUI:
             self.log_message("正在停止处理...", 'INFO')
             self.update_progress("正在停止...", None)
 
-    def _processing_thread(self, old_path, new_path, output_dir):
-        # 首先，从GUI收集当前所有参数，确保处理任务使用的是界面上显示的值
-        current_params = self._collect_current_gui_parameters()
-        # 使用验证过的路径信息，而不是从GUI重新获取
-        current_params['old_file_path'] = old_path
-        current_params['new_file_path'] = new_path
-        current_params['output_directory'] = output_dir
+    def _processing_thread(self, processing_paths):
+        current_params = apply_processing_paths(
+            self._collect_current_gui_parameters(),
+            processing_paths,
+        )
         self.parameter_manager.parameters = current_params # 更新内存中的参数以保证日志等部分参数一致
 
-        # Initialize log file：设置了输出目录则日志写入输出目录；否则写入应用临时目录
-        try:
-            try:
-                app_temp_dir = get_app_temp_dir()
-            except Exception:
-                app_temp_dir = '.'
-            preferred_log_dir = output_dir or app_temp_dir
-        except Exception:
-            preferred_log_dir = output_dir or '.'
+        preferred_log_dir = resolve_log_directory(
+            processing_paths.output_dir,
+            get_app_temp_dir,
+        )
         log_file_initialized = self._initialize_log_file(preferred_log_dir)
         if log_file_initialized:
             self.log_message(f"📁 日志文件已创建: {os.path.basename(self.log_file_path)}", 'INFO')
@@ -1082,16 +1069,20 @@ class DatasetComparatorGUI:
                 return
             
             # Validate files
-            old_valid, old_error = validate_excel_file(old_path, self.log_message)
-            new_valid, new_error = validate_excel_file(new_path, self.log_message)
+            old_valid, old_error = validate_excel_file(
+                processing_paths.old_path, self.log_message
+            )
+            new_valid, new_error = validate_excel_file(
+                processing_paths.new_path, self.log_message
+            )
             
             if not old_valid:
                 self.log_message(f"⚠️ 旧版本文件验证失败: {old_error}")
             if not new_valid:
                 self.log_message(f"⚠️ 新版本文件验证失败: {new_error}")
             
-            final_old_path = old_path
-            final_new_path = new_path
+            final_old_path = processing_paths.old_path
+            final_new_path = processing_paths.new_path
  
             # Prepare parameters for ConfigManager update
             # 直接使用从GUI收集的最新参数
@@ -1100,12 +1091,11 @@ class DatasetComparatorGUI:
             # Update ConfigManager with all current parameters and colors
             self.config_manager.update_from_parameters(all_params, all_params.get('colors', {}))
             
-            # 生成输出文件名：配置名称-比对报告-生成时间
-            current_time = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
             config_name = getattr(self.parameter_manager, 'current_config_name', '') or ''
-            safe_name = _sanitize_filename(config_name)
-            output_filename = f"{safe_name}-比对报告-{current_time}.xlsx"
-            output_path = os.path.join(output_dir, output_filename).replace('\\', '/')
+            output_path = build_output_path(
+                config_name,
+                processing_paths.output_dir,
+            )
 
             # 开始处理
             self.reset_progress()

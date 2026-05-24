@@ -1,7 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
-import sys
 
 # 获取项目根目录，假设spec文件在 scripts 目录下，项目根目录是 scripts 的上一级
 spec_dir = os.path.dirname(os.path.abspath(SPEC))
@@ -14,13 +13,9 @@ icon_path_candidates = [
     os.path.join(project_root, 'src', 'assets', 'icons', 'app_icon.ico'),
 ]
 icon_path = next((p for p in icon_path_candidates if os.path.exists(p)), None)
-parameters_path = os.path.join(project_root, 'src', 'config', 'parameters.json')
 version_file_path = os.path.join(project_root, 'scripts', 'version_info.txt')
 
-# 数据文件列表
 datas = []
-if os.path.exists(parameters_path):
-    datas.append((parameters_path, '.'))
 
 # 添加图标文件到数据文件，保持其在打包后的相对路径
 if icon_path and os.path.exists(icon_path):

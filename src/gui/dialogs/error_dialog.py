@@ -4,7 +4,7 @@ import os
 import subprocess
 
 # 导入设置窗口图标的函数
-from ...utils.file_utils import set_window_icon
+from ...frontend.window_utils import set_window_icon
 
 
 def show_file_error_dialog(root, file_path, error_message):

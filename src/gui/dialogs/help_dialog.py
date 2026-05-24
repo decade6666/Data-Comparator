@@ -1,6 +1,6 @@
 ﻿import tkinter as tk
 from tkinter import ttk
-from ...utils.file_utils import set_window_icon
+from ...frontend.window_utils import set_window_icon
 # from ..components.scrollable_frame import ScrollableFrame
 
 
