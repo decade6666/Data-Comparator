@@ -1,0 +1,347 @@
+{
+  "timestamp": "2026-05-24T03:25:49",
+  "project": {
+    "name": "Data-Comparator",
+    "root": "/root/github/Data-Comparator",
+    "summary": "Python Excel dataset comparison tool with Linux Web/API runtime, historical GUI compatibility, and Windows packaging scripts.",
+    "root_document": "CLAUDE.md"
+  },
+  "coverage": {
+    "scope_files": 68,
+    "scanned_high_signal_files": 56,
+    "estimated_percent": 82.35,
+    "truncated": false,
+    "notes": [
+      "Initial broad scan produced excessive results, then high-signal files were covered through targeted module scans.",
+      "Generated documentation covers runtime entrypoints, backend layers, frontend Web API, historical GUI, shared contracts, scripts, and pytest assets."
+    ]
+  },
+  "ignored": {
+    "sources": [
+      ".gitignore",
+      "default generated-artifact and binary exclusions"
+    ],
+    "patterns": [
+      "__pycache__/",
+      "*.py[cod]",
+      "build/",
+      "dist/",
+      "dist_nuitka/",
+      "*.egg-info/",
+      "*.exe",
+      "*.msi",
+      "*.log",
+      ".pytest_cache/",
+      ".mypy_cache/",
+      ".venv/",
+      "venv/",
+      ".vscode/",
+      ".idea/",
+      ".agents/",
+      ".codex/",
+      "旧版/",
+      "*.dll",
+      "*.so",
+      "*.pdb",
+      "*.lib",
+      ".cache/",
+      ".ruff_cache/",
+      "env/"
+    ],
+    "kept_exceptions": [
+      "scripts/app.spec"
+    ]
+  },
+  "skipped": {
+    "reasons": [
+      "Generated artifacts and binary outputs are documented by path only and not scanned as source.",
+      "Build scripts were read for documentation context but not executed because they install dependencies, delete build outputs, or produce binaries."
+    ],
+    "paths": [
+      "build/",
+      "dist/",
+      "dist_nuitka/",
+      ".git/",
+      "__pycache__/",
+      ".pytest_cache/",
+      ".mypy_cache/",
+      ".ruff_cache/"
+    ]
+  },
+  "gaps": [
+    "No confirmed full Excel workbook end-to-end fixture test was found during the scan.",
+    "src/backend/domain/data_comparison.py is large and should be protected with finer-grained tests before behavioral changes.",
+    "GUI direct automation coverage is limited; current confidence comes mostly from import smoke tests and backend tests.",
+    "No OpenAPI schema snapshot or explicit API contract regression test was found."
+  ],
+  "modules": [
+    {
+      "name": "src",
+      "path": "src",
+      "document": "src/CLAUDE.md",
+      "role": "Python package root and runtime entrypoint aggregation.",
+      "entrypoints": [
+        "src/main_web.py",
+        "src/main.py"
+      ],
+      "interfaces": [
+        "dataset-comparator-web = src.main_web:main",
+        "dataset-comparator-gui = src.main:main",
+        "dataset-comparator = src.main:main"
+      ],
+      "tests": [
+        "tests/test_import_smoke.py"
+      ],
+      "important_paths": [
+        "run.py",
+        "src/main_web.py",
+        "src/main.py"
+      ]
+    },
+    {
+      "name": "backend",
+      "path": "src/backend",
+      "document": "src/backend/CLAUDE.md",
+      "role": "Backend package grouping application orchestration, domain comparison logic, and infrastructure adapters.",
+      "entrypoints": [
+        "src/backend/application/comparison_runner.py"
+      ],
+      "interfaces": [
+        "application.run_comparison",
+        "domain.process_edc_multithreaded",
+        "infrastructure.ConfigManager"
+      ],
+      "tests": [
+        "tests/test_comparison_runner.py",
+        "tests/test_processing_service.py",
+        "tests/test_parameter_repository.py",
+        "tests/test_progress_manager.py",
+        "tests/test_processing_control.py"
+      ],
+      "important_paths": [
+        "src/backend/application/",
+        "src/backend/domain/",
+        "src/backend/infrastructure/"
+      ]
+    },
+    {
+      "name": "application",
+      "path": "src/backend/application",
+      "document": "src/backend/application/CLAUDE.md",
+      "role": "Application orchestration for path validation, output naming, configuration injection, and domain process invocation.",
+      "entrypoints": [
+        "src/backend/application/comparison_runner.py",
+        "src/backend/application/processing_service.py"
+      ],
+      "interfaces": [
+        "run_comparison(parameters, config_name='web', ...)",
+        "validate_processing_paths(...)",
+        "build_output_path(config_name, output_dir, now=None)",
+        "apply_processing_paths(parameters, processing_paths)",
+        "sanitize_output_name(name)"
+      ],
+      "tests": [
+        "tests/test_comparison_runner.py",
+        "tests/test_processing_service.py"
+      ],
+      "important_paths": [
+        "src/backend/application/comparison_runner.py",
+        "src/backend/application/processing_service.py"
+      ]
+    },
+    {
+      "name": "domain",
+      "path": "src/backend/domain",
+      "document": "src/backend/domain/CLAUDE.md",
+      "role": "Core Excel dataset comparison, Sheet processing, SAS metadata handling, highlighting, progress, and stop control.",
+      "entrypoints": [
+        "src/backend/domain/data_comparison.py"
+      ],
+      "interfaces": [
+        "process_edc_multithreaded",
+        "perform_full_comparison",
+        "read_single_sheet_from_excel",
+        "create_anchor_by_sas_names",
+        "compare_columns_by_sas_names",
+        "SheetProcessResult",
+        "check_stop_frequently"
+      ],
+      "tests": [
+        "tests/test_processing_control.py",
+        "tests/test_sheet_process_result.py",
+        "tests/test_highlight_optimizer.py"
+      ],
+      "important_paths": [
+        "src/backend/domain/data_comparison.py",
+        "src/backend/domain/excel_header_utils.py",
+        "src/backend/domain/excel_utils.py",
+        "src/backend/domain/highlight_optimizer.py",
+        "src/backend/domain/highlight_utils.py",
+        "src/backend/domain/dataframe_utils.py",
+        "src/backend/domain/processing_control.py",
+        "src/backend/domain/sheet_process_result.py"
+      ]
+    },
+    {
+      "name": "infrastructure",
+      "path": "src/backend/infrastructure",
+      "document": "src/backend/infrastructure/CLAUDE.md",
+      "role": "Configuration persistence, Excel runtime file preparation, temporary directories, AutoFilter cleanup, and thread-safe progress.",
+      "entrypoints": [
+        "src/backend/infrastructure/config_manager.py",
+        "src/backend/infrastructure/parameter_repository.py",
+        "src/backend/infrastructure/file_runtime.py",
+        "src/backend/infrastructure/progress_manager.py"
+      ],
+      "interfaces": [
+        "ConfigManager",
+        "JsonParameterRepository",
+        "check_and_remove_file_protection",
+        "validate_excel_file",
+        "get_sheet_names",
+        "ThreadSafeProgressManager"
+      ],
+      "tests": [
+        "tests/test_parameter_repository.py",
+        "tests/test_progress_manager.py",
+        "tests/test_processing_control.py"
+      ],
+      "important_paths": [
+        "src/backend/infrastructure/config_manager.py",
+        "src/backend/infrastructure/parameter_repository.py",
+        "src/backend/infrastructure/file_runtime.py",
+        "src/backend/infrastructure/progress_manager.py"
+      ]
+    },
+    {
+      "name": "frontend",
+      "path": "src/frontend",
+      "document": "src/frontend/CLAUDE.md",
+      "role": "FastAPI Web API and GUI update queue helpers.",
+      "entrypoints": [
+        "src/frontend/web_api.py"
+      ],
+      "interfaces": [
+        "app",
+        "GET /health",
+        "POST /api/compare",
+        "CompareRequest.to_parameter_document",
+        "GUIUpdateManager"
+      ],
+      "tests": [
+        "tests/test_web_api.py"
+      ],
+      "important_paths": [
+        "src/frontend/web_api.py",
+        "src/frontend/gui_update_manager.py",
+        "src/frontend/window_utils.py"
+      ]
+    },
+    {
+      "name": "gui",
+      "path": "src/gui",
+      "document": "src/gui/CLAUDE.md",
+      "role": "Historical Tkinter/ttkbootstrap desktop GUI for parameter editing, processing control, logs, and progress.",
+      "entrypoints": [
+        "src/main.py",
+        "run.py"
+      ],
+      "interfaces": [
+        "DatasetComparatorGUI",
+        "ParameterManager",
+        "TopOperationsBar",
+        "ParameterCardFrame"
+      ],
+      "tests": [
+        "tests/test_import_smoke.py"
+      ],
+      "important_paths": [
+        "src/gui/main_window.py",
+        "src/gui/parameter_manager.py",
+        "src/gui/components/top_operations_bar.py",
+        "src/gui/components/parameter_card_frame.py",
+        "src/gui/components/scrollable_frame.py",
+        "src/gui/dialogs/error_dialog.py",
+        "src/gui/dialogs/help_dialog.py"
+      ]
+    },
+    {
+      "name": "shared",
+      "path": "src/shared",
+      "document": "src/shared/CLAUDE.md",
+      "role": "Cross-layer typed contracts, logging wrapper, and runtime resource path utilities.",
+      "entrypoints": [
+        "src/shared/contracts.py",
+        "src/shared/log_utils.py",
+        "src/shared/resource_utils.py"
+      ],
+      "interfaces": [
+        "ParameterDocument",
+        "ParameterColors",
+        "LogFunc",
+        "log",
+        "get_resource_path"
+      ],
+      "tests": [
+        "tests/test_log_utils.py",
+        "tests/test_import_smoke.py"
+      ],
+      "important_paths": [
+        "src/shared/contracts.py",
+        "src/shared/log_utils.py",
+        "src/shared/resource_utils.py"
+      ]
+    },
+    {
+      "name": "scripts",
+      "path": "scripts",
+      "document": "scripts/CLAUDE.md",
+      "role": "Windows packaging scripts and version resources for PyInstaller and Nuitka builds.",
+      "entrypoints": [
+        "scripts/build_script.py",
+        "scripts/build.bat",
+        "scripts/build_with_nuitka.bat"
+      ],
+      "interfaces": [
+        "scripts/app.spec",
+        "scripts/version_info.txt"
+      ],
+      "tests": [],
+      "important_paths": [
+        "scripts/build_script.py",
+        "scripts/app.spec",
+        "scripts/build.bat",
+        "scripts/build_with_nuitka.bat",
+        "scripts/README_Nuitka.md",
+        "scripts/version_info.txt"
+      ]
+    },
+    {
+      "name": "tests",
+      "path": "tests",
+      "document": "tests/CLAUDE.md",
+      "role": "pytest suite covering Web API, application orchestration, path handling, infrastructure, stop control, import smoke, logging, and domain helpers.",
+      "entrypoints": [
+        "pytest"
+      ],
+      "interfaces": [
+        "pytest markers: slow, integration"
+      ],
+      "tests": [
+        "tests/test_comparison_runner.py",
+        "tests/test_web_api.py",
+        "tests/test_processing_service.py",
+        "tests/test_parameter_repository.py",
+        "tests/test_progress_manager.py",
+        "tests/test_sheet_process_result.py",
+        "tests/test_highlight_optimizer.py",
+        "tests/test_log_utils.py",
+        "tests/test_processing_control.py",
+        "tests/test_import_smoke.py"
+      ],
+      "important_paths": [
+        "tests/"
+      ]
+    }
+  ]
+}
