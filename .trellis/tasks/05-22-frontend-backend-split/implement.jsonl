@@ -1,0 +1,25 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Current module layout and entrypoint/build path constraints"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Python 3.8/tooling/testing constraints for refactor"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Preserve InterruptedError and GUI-boundary validation behavior"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Preserve callback logging contract during moves"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer boundary/contracts guidance for split"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Search-first and dedupe guidance for Phase 0 cleanup"}
+{"file": "src/gui/main_window.py", "reason": "Current GUI orchestration hotspot and import chokepoint"}
+{"file": "src/gui/parameter_manager.py", "reason": "Config persistence compatibility and template ownership"}
+{"file": "src/core/data_comparison.py", "reason": "Current comparison pipeline and dead GUI coupling target"}
+{"file": "src/backend/infrastructure/file_runtime.py", "reason": "Phase 2 runtime/file preprocessing split and temp-path ownership"}
+{"file": "src/backend/domain/dataframe_utils.py", "reason": "Phase 2 canonical owner for update-mark column reordering"}
+{"file": "src/frontend/window_utils.py", "reason": "Phase 2 frontend-only window icon helper"}
+{"file": "src/shared/resource_utils.py", "reason": "Phase 2 shared resource path helper"}
+{"file": "src/utils/config_manager.py", "reason": "Runtime config seam between UI and comparison logic"}
+{"file": "src/utils/progress_manager.py", "reason": "Progress/log callback contract source"}
+{"file": "src/frontend/gui_update_manager.py", "reason": "Frontend-only GUI update queue manager"}
+{"file": "src/utils/logger.py", "reason": "Canonical callback logging helper"}
+{"file": "src/utils/stop_flag_utils.py", "reason": "Canonical cooperative stop state and helper"}
+{"file": "src/main.py", "reason": "Package entrypoint import chokepoint"}
+{"file": "run.py", "reason": "Repo launcher chokepoint"}
+{"file": "scripts/app.spec", "reason": "PyInstaller path and icon constraints"}
+{"file": "pyproject.toml", "reason": "Script/build/test discovery constraints"}

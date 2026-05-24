@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Target guideline to fill"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Target guideline to fill"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Target guideline to fill"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Target guideline to fill"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Target guideline to fill"}
+{"file": "docs/开发文档.md", "reason": "Source of architecture and workflow evidence"}
+{"file": "文件夹结构.md", "reason": "Source of directory layout evidence"}
+{"file": "pyproject.toml", "reason": "Source of dependency and tooling evidence"}

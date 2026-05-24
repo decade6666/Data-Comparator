@@ -1,0 +1,24 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Verify package moves preserve runtime/build structure"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check formatting/tests/manual validation expectations"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify stop/failure paths stay separated"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Verify no new raw print sites are introduced"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check boundary/contract consistency after changes"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check dedupe and single-owner outcomes"}
+{"file": "src/gui/main_window.py", "reason": "Verify UI behavior/import paths remain stable"}
+{"file": "src/gui/parameter_manager.py", "reason": "Verify config CRUD compatibility after split"}
+{"file": "src/core/data_comparison.py", "reason": "Verify domain move preserves compare behavior"}
+{"file": "src/backend/infrastructure/file_runtime.py", "reason": "Verify file preprocessing and temp-path helpers moved cleanly"}
+{"file": "src/backend/domain/dataframe_utils.py", "reason": "Verify canonical owner for update-mark column reordering"}
+{"file": "src/frontend/window_utils.py", "reason": "Verify frontend-only icon helper remains stable"}
+{"file": "src/shared/resource_utils.py", "reason": "Verify shared resource path helper stays packaging-safe"}
+{"file": "src/utils/config_manager.py", "reason": "Verify runtime config compatibility"}
+{"file": "src/utils/progress_manager.py", "reason": "Verify thread-safe progress contract preserved"}
+{"file": "src/frontend/gui_update_manager.py", "reason": "Verify Tkinter-only runtime helpers stay thread-safe"}
+{"file": "src/utils/logger.py", "reason": "Verify logging single-source contract preserved"}
+{"file": "src/utils/stop_flag_utils.py", "reason": "Verify shared stop state remains single-owner"}
+{"file": "src/main.py", "reason": "Verify entrypoint imports after path changes"}
+{"file": "run.py", "reason": "Verify top-level launcher remains valid"}
+{"file": "scripts/app.spec", "reason": "Verify packaged build paths remain valid"}
+{"file": "pyproject.toml", "reason": "Verify package/test/build metadata remains consistent"}
