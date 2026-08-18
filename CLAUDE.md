@@ -138,5 +138,6 @@ pytest --cov=src --cov-report=term-missing
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-18 | feat | 新增 Vue 3 Web UI（frontend/，参考 CRF-Editor 设计令牌与暗色模式）；新增异步任务（/api/jobs 提交/轮询/取消/下载）、文件上传、目录浏览、Sheet 发现与配置 CRUD 端点；接入进度/停止管线与内置模板。 |
 | 2026-08-17 | feat | 同步上游 gitee 新增 include_sheets / ignore_cols / sheet_ignore_cols / sheet_order 比对配置；移除历史桌面 GUI 与 Windows 打包脚本，项目定位为 Linux Web/API 运行；版本升至 1.7.0。 |
 | 2026-05-24T03:25:49 | docs | 初始化项目架构索引，生成根级与模块级 Claude 指南。 |

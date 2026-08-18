@@ -32,6 +32,28 @@ pip install -e .[performance]
 ```
 
 ## 快速上手
+
+### 方式一：浏览器 Web UI（推荐）
+
+1. 构建前端（需要 Node.js ≥ 18）：
+   ```bash
+   cd frontend && npm install && npm run build && cd ..
+   ```
+2. 启动服务（`frontend/dist` 由 FastAPI 自动托管）：
+   ```bash
+   DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8000 dataset-comparator-web
+   ```
+3. 浏览器打开 `http://127.0.0.1:8000/` 即可使用。
+
+前端开发模式（Vite 热更新，代理 `/api` 到后端 8000 端口）：
+```bash
+cd frontend && npm run dev
+```
+
+部署说明：静态目录可通过环境变量 `DATASET_COMPARATOR_STATIC_DIR` 覆盖（默认指向仓库内 `frontend/dist`）；子路径部署需在构建时设置 `VITE_BASE_PATH`。
+
+### 方式二：纯 API
+
 - 启动 Web/API 服务：
   ```bash
   DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8000 dataset-comparator-web
@@ -76,6 +98,19 @@ pip install -e .[performance]
 
 提示：首次运行会在用户数据目录创建临时与配置子目录（例如 `PyDataCompare/temp/configs`）。
 
+### 异步任务 API（Web UI 使用）
+
+Web UI 基于异步任务接口实现进度显示与停止：
+
+- `POST /api/jobs`：提交比对任务（字段与 `/api/compare` 一致；也可传 `old_file_upload_id` / `new_file_upload_id` 走上传模式，输出目录缺省为临时目录），返回 `job_id`。同一时间只允许一个任务运行，冲突返回 409。
+- `GET /api/jobs/{job_id}?since=N`：轮询状态与新增日志，返回 `status` / `progress_percent` / `progress_message` / `log_lines` / `output_path`。
+- `POST /api/jobs/{job_id}/cancel`：请求停止任务（底层设置停止标志，领域层抛出 `InterruptedError` 后任务标记为 `cancelled`）。
+- `GET /api/jobs/{job_id}/download`：任务完成后下载比对报告。
+- `POST /api/upload`：上传 Excel 文件（`.xlsx`/`.xls`，默认上限 200MB，可用 `DATASET_COMPARATOR_MAX_UPLOAD_MB` 调整）。
+- `GET /api/browse?path=...`：浏览服务器目录（白名单由 `DATASET_COMPARATOR_BROWSE_ROOTS` 配置，默认用户主目录）。
+- `GET /api/sheets`：读取 Excel 文件的 Sheet 名称（`file_path` 或 `upload_id`）。
+- `GET/PUT/DELETE /api/configs/...`：配置预设的加载、保存、删除、复制、导入、导出；内置模板（CIMS/TM）受保护不可覆盖删除。
+
 ## 比对配置说明
 
 | 参数 | 说明 |
@@ -86,11 +121,12 @@ pip install -e .[performance]
 | `sheet_order` | 输出表单顺序：按指定顺序排列输出文件中的表单；优先级为 sheet_order > include_sheets > 源文件顺序 |
 
 ## 目录结构（摘要）
+- `frontend/`：Vue 3 + Vite + Element Plus 浏览器 UI（设计令牌与暗色模式参考 CRF-Editor）
 - `src/main_web.py`：Linux Web/API 程序入口
-- `src/frontend/`：FastAPI Web API 层（web_api.py）
-- `src/backend/application/`：应用编排服务，如路径校验与输出路径生成
+- `src/frontend/`：FastAPI Web API 层（web_api.py，含任务/上传/浏览/配置端点与静态资源托管）
+- `src/backend/application/`：应用编排服务，如路径校验、输出路径生成与异步任务管理（job_manager.py）
 - `src/backend/domain/`：比对领域逻辑、Excel 读取/渲染、高亮与停止控制
-- `src/backend/infrastructure/`：配置、进度、临时目录与文件预处理等运行时适配（含 `parameter_templates.py` 内置配置模板）
+- `src/backend/infrastructure/`：配置、进度、临时目录、上传存储与路径安全校验等运行时适配
 - `src/shared/`：跨层契约与日志转发
 - `tests/`：pytest 测试资产
 

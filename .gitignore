@@ -99,3 +99,7 @@ desktop.ini
 
 # Alternate venv name
 env/
+# Frontend (Vue/Vite) build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/*.local

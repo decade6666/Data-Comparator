@@ -23,6 +23,12 @@
   - `get_app_temp_dir(...)`
   - `cleanup_nofilter_files(...)`
   - `remove_auto_filters_from_xlsx(...)`
+- `path_security.py`
+  - `is_safe_path(...)`：解析后路径必须位于允许目录内。
+  - `validate_asset_raw_path(...)`：拒绝绝对路径、点段、反斜杠与 URL 编码绕过。
+  - `get_browse_roots(...)`：目录浏览白名单（环境变量 `DATASET_COMPARATOR_BROWSE_ROOTS`，默认用户主目录）。
+- `upload_store.py`
+  - `UploadStore`：浏览器上传文件的临时存储与注册表（`.xlsx`/`.xls` 白名单、大小限制、过期清理）。
 - `progress_manager.py`
   - `ThreadSafeProgressManager`：多线程 Sheet 处理中的进度聚合。
 
@@ -92,4 +98,5 @@
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-18 | feat | 新增 `path_security.py` 路径白名单校验与 `upload_store.py` 上传临时存储。 |
 | 2026-05-24T03:25:49 | docs | 初始化 `backend/infrastructure` 模块 Claude 指南。 |
