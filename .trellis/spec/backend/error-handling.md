@@ -6,14 +6,14 @@
 
 ## Overview
 
-This project has a small HTTP/API error contract in `src/frontend/web_api.py`, while the legacy GUI still handles desktop-facing errors.
+This project has a small HTTP/API error contract in `src/frontend/web_api.py`.
 Errors are handled through a mix of:
 
-- validation at API, GUI, and application boundaries
+- validation at API and application boundaries
 - return-value based helpers (`True/False`, `None`, error text)
 - standard Python exceptions for fatal failures
 - a dedicated `InterruptedError` path for user-triggered stop
-- log messages plus HTTP errors or Tkinter dialogs for user-facing feedback
+- log messages plus HTTP errors for user-facing feedback
 
 The codebase currently prefers practical recovery and runtime continuity over a strict exception hierarchy.
 
@@ -28,7 +28,7 @@ The project mostly uses built-in exceptions instead of custom classes.
 - `InterruptedError` for cooperative user stop
 - `FileNotFoundError` for missing source files
 - `ValueError` for invalid sheet/header states or invalid persisted JSON shape
-- generic `Exception` catches for cleanup, fallback, or GUI-safe reporting
+- generic `Exception` catches for cleanup, fallback, or safe reporting
 
 ### Real examples
 
@@ -62,31 +62,25 @@ if len(non_empty_names) != len(set(non_empty_names)):
 
 Before processing starts, `src/backend/application/processing_service.py` validates required paths,
 input-file existence, and output-directory creation.
-The API maps those failures to HTTP responses, while the GUI logs them and shows the user-facing dialog.
+The API maps those failures to HTTP responses.
 
 ```python
 paths = validate_processing_paths(parameters)
 ```
 
-### 2. Keep GUI-facing failures user friendly
+### 2. Keep API-facing failures informative
 
-`src/gui/main_window.py` is responsible for restoring UI state and showing Tkinter dialogs.
-Backend modules should raise or return enough context for the GUI to present a clear message.
-
-```python
-self.log_message(f"处理过程中出现错误：{error_msg}", "ERROR")
-self._force_unlock_ui()
-```
+`src/frontend/web_api.py` translates application/domain exceptions into `HTTPException` responses
+with the original message as detail, so callers see the failing file or sheet name.
 
 ### 3. Separate stop from failure
 
 Long-running workflows treat user stop as a normal branch, not as a fatal error.
-`InterruptedError` is caught separately in `src/gui/main_window.py::_processing_thread`.
+`InterruptedError` is caught separately in `src/frontend/web_api.py` and mapped to HTTP 409.
 
 ```python
-except InterruptedError:
-    self.update_progress("操作已停止", 0)
-    self.log_message("操作已被用户停止", "INFO")
+except InterruptedError as exc:
+    raise HTTPException(status_code=409, detail=str(exc)) from exc
 ```
 
 Broad exception handlers in backend/domain or backend/infrastructure code must re-raise `InterruptedError` before handling generic failures.
@@ -117,7 +111,7 @@ except Exception as exc:
 The codebase often uses sentinel return values instead of custom exceptions when the caller can continue.
 Examples:
 
-- `ParameterManager.load_config()` returns `False` on failure
+- `JsonParameterRepository.load_document()` returns `None` when the config file does not exist
 - `read_single_sheet_from_excel()` returns `None` when a sheet is missing or unreadable
 - `validate_excel_file()` returns `(False, error_text)`
 
@@ -323,29 +317,12 @@ def compare(request: CompareRequest) -> CompareResponse:
     return CompareResponse(output_path=output_path)
 ```
 
-The legacy GUI still uses dialog-based feedback for desktop-only flows:
-
-- `messagebox.showerror(...)` for blocking failures
-- `messagebox.showwarning(...)` for invalid or risky user choices
-- `messagebox.showinfo(...)` for stop/completion guidance
-- `show_file_error_dialog(...)` for richer file-repair instructions
-
-Example from `src/gui/main_window.py`:
-
-```python
-self.log_message(f"处理过程中出现错误：{error_msg}", "ERROR")
-self._force_unlock_ui()
-self.root.after(0, lambda msg=error_msg: self._show_message_then_unlock("error", "错误", f"处理过程中出现错误：\n{msg}"))
-```
-
 ---
 
 ## Common Mistakes
 
 - Catching `Exception` and doing nothing in core logic where the failure matters
 - Treating user stop and actual failure as the same path
-- Updating Tkinter widgets directly from a worker thread instead of routing through the GUI update manager
-- Forgetting to unlock/restore the UI after failures in background processing
 - Adding a new persisted config field without a compatibility backfill path
 - Returning vague error text when the code can include the failing sheet/file name
 - Reintroducing old `src.core` or `src.utils` exception examples in new docs or imports

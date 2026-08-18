@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataset-comparator"
-version = "1.6.3"
+version = "1.7.0"
 description = "高效的数据集比对工具，支持大文件处理和多种比对模式"
 readme = "README.md"
 authors = [
@@ -18,7 +18,6 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
@@ -36,8 +35,6 @@ dependencies = [
     "fastapi>=0.110.0,<1.0.0",
     "pydantic>=2.0.0,<3.0.0",
     "uvicorn>=0.27.0,<1.0.0",
-    "ttkbootstrap>=1.10.0",
-    "pywin32>=305; sys_platform == 'win32'",
     "appdirs>=1.4.0",
 ]
 
@@ -53,10 +50,6 @@ performance = [
     "xlsxwriter>=3.0.0",
     "psutil>=5.8.0",
 ]
-build = [
-    "pyinstaller>=5.0",
-    "nuitka>=1.0.0",
-]
 
 [project.urls]
 Homepage = "https://github.com/your-org/dataset-comparator"
@@ -65,11 +58,8 @@ Repository = "https://github.com/your-org/dataset-comparator.git"
 "Bug Reports" = "https://github.com/your-org/dataset-comparator/issues"
 
 [project.scripts]
-dataset-comparator = "src.main:main"
+dataset-comparator = "src.main_web:main"
 dataset-comparator-web = "src.main_web:main"
-
-[project.gui-scripts]
-dataset-comparator-gui = "src.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -77,24 +67,7 @@ include = ["src", "src.*"]
 exclude = ["tests", "tests.*"]
 
 [tool.setuptools.package-data]
-"*" = ["*.ico", "*.json", "*.md"]
-
-# 构建配置
-[tool.pyinstaller]
-entry-point = "src/main.py"
-icon = "src/assets/icons/app_icon.ico"
-onefile = true
-windowed = true
-hidden-imports = [
-    "pandas",
-    "numpy",
-    "openpyxl",
-    "tkinter",
-    "threading",
-    "queue",
-    "json",
-    "concurrent.futures",
-]
+"*" = ["*.json", "*.md"]
 
 # 代码质量工具配置
 [tool.black]

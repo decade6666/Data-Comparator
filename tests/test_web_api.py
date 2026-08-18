@@ -37,6 +37,10 @@ def test_compare_endpoint_runs_synchronous_comparison(monkeypatch) -> None:
             "exclude_sheets": ["说明"],
             "default_keys": ["USUBJID"],
             "sheet_key_map": {"AE": ["USUBJID", "AESEQ"]},
+            "include_sheets": ["AE", "DM"],
+            "ignore_cols": ["UPDATETIME"],
+            "sheet_ignore_cols": {"AE": ["AEMODIFY"]},
+            "sheet_order": ["DM", "AE"],
             "colors": {"highlight_fill": "#FFFFFF"},
         },
     )
@@ -47,6 +51,10 @@ def test_compare_endpoint_runs_synchronous_comparison(monkeypatch) -> None:
     assert calls["parameters"]["old_file_path"] == "old.xlsx"
     assert calls["parameters"]["anchor_row_num"] == 2
     assert calls["parameters"]["sheet_key_map"] == {"AE": ["USUBJID", "AESEQ"]}
+    assert calls["parameters"]["include_sheets"] == ["AE", "DM"]
+    assert calls["parameters"]["ignore_cols"] == ["UPDATETIME"]
+    assert calls["parameters"]["sheet_ignore_cols"] == {"AE": ["AEMODIFY"]}
+    assert calls["parameters"]["sheet_order"] == ["DM", "AE"]
     assert calls["parameters"]["colors"] == {"highlight_fill": "#FFFFFF"}
 
 
@@ -92,6 +100,32 @@ def test_compare_endpoint_logs_unexpected_failure(monkeypatch) -> None:
     assert response.status_code == 500
     assert response.json() == {"detail": "比对处理失败: 处理崩溃"}
     assert messages == ["比对处理失败: 处理崩溃"]
+
+
+def test_compare_endpoint_defaults_new_scope_fields_to_empty(monkeypatch) -> None:
+    calls = {}
+
+    def fake_run_comparison(parameters, config_name="web", log_func=None):
+        calls["parameters"] = parameters
+        return "/tmp/out/report.xlsx"
+
+    monkeypatch.setattr(web_api, "run_comparison", fake_run_comparison)
+    client = TestClient(web_api.app)
+
+    response = client.post(
+        "/api/compare",
+        json={
+            "old_file_path": "old.xlsx",
+            "new_file_path": "new.xlsx",
+            "output_directory": "/tmp/out",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls["parameters"]["include_sheets"] == []
+    assert calls["parameters"]["ignore_cols"] == []
+    assert calls["parameters"]["sheet_ignore_cols"] == {}
+    assert calls["parameters"]["sheet_order"] == []
 
 
 def test_compare_endpoint_requires_paths() -> None:

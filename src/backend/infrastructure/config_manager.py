@@ -16,6 +16,10 @@ class ConfigManager:
         self.common_cols_to_drop: List[str] = []
         self.default_keys: List[str] = []
         self.sheet_key_map: Dict[str, List[str]] = {}
+        self.include_sheets: List[str] = []
+        self.ignore_cols: List[str] = []
+        self.sheet_ignore_cols: Dict[str, List[str]] = {}
+        self.sheet_order: List[str] = []
         self.highlight_fill: Optional[PatternFill] = None
         self.missing_sheet_tab_fill: Optional[PatternFill] = None
         self.new_sheet_tab_fill: Optional[PatternFill] = None
@@ -42,6 +46,10 @@ class ConfigManager:
         self.common_cols_to_drop = list(parameters.get("common_cols", []))
         self.default_keys = list(parameters.get("default_keys", []))
         self.sheet_key_map = dict(parameters.get("sheet_key_map", {}))
+        self.include_sheets = list(parameters.get("include_sheets", []))
+        self.ignore_cols = list(parameters.get("ignore_cols", []))
+        self.sheet_ignore_cols = dict(parameters.get("sheet_ignore_cols", {}))
+        self.sheet_order = list(parameters.get("sheet_order", []))
         self.max_workers = parameters.get(
             "max_workers", max(1, (os.cpu_count() or 1) - 1)
         )

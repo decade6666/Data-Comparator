@@ -4,9 +4,6 @@ import os
 from numbers import Number
 
 import pandas as pd
-
-# 导入psutil用于内存监控
-import psutil
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -40,6 +37,8 @@ def _maybe_gc_collect(threshold_percent=70, log_func=None):
     如果 psutil 未安装或出错，将退化为无条件执行 gc.collect()。
     """
     try:
+        import psutil  # 可选依赖：未安装时退化为无条件 gc.collect()
+
         process = psutil.Process(os.getpid())
         current_process_usage_percent = process.memory_percent()
         system_overall_usage_percent = psutil.virtual_memory().percent
@@ -353,6 +352,22 @@ def process_single_sheet_complete(
                     key_cols = config.default_keys
                     log_func(f"ℹ️ Sheet [{sheet_name}] 使用默认锚点列: {key_cols}")
 
+                # 解析当前Sheet使用的忽略比对字段（整体替换语义，与指定锚点列一致）
+                if sheet_name in config.sheet_ignore_cols:
+                    effective_ignore_cols = list(
+                        config.sheet_ignore_cols.get(sheet_name, [])
+                    )
+                    log_func(
+                        f"ℹ️ Sheet [{sheet_name}] 使用指定忽略比对字段: {effective_ignore_cols}"
+                    )
+                else:
+                    effective_ignore_cols = list(config.ignore_cols or [])
+                    if effective_ignore_cols:
+                        log_func(
+                            f"ℹ️ Sheet [{sheet_name}] 使用全局忽略比对字段: "
+                            f"{effective_ignore_cols}"
+                        )
+
                 # 执行完整的比对逻辑，返回比对后的DataFrame和差异信息
                 (
                     compared_df,
@@ -367,7 +382,13 @@ def process_single_sheet_complete(
                     deleted_count,
                     added_count,
                 ) = perform_full_comparison(
-                    sheet_name, old_df, new_df, key_cols, config, progress_manager
+                    sheet_name,
+                    old_df,
+                    new_df,
+                    key_cols,
+                    config,
+                    progress_manager,
+                    ignore_cols=effective_ignore_cols,
                 )
 
                 result.change_type = change_type  # 设置变更类型
@@ -513,7 +534,7 @@ def process_new_sheet(sheet_name, new_df, config, progress_manager):
 
 
 def perform_full_comparison(
-    sheet_name, old_df, new_df, key_cols, config, progress_manager
+    sheet_name, old_df, new_df, key_cols, config, progress_manager, ignore_cols=None
 ):
     """
     执行完整的数据比对流程。
@@ -527,6 +548,7 @@ def perform_full_comparison(
         key_cols (list): 用于创建锚点（唯一标识行）的列名列表。
         config (ConfigManager): 配置管理器对象，包含颜色等设置。
         progress_manager (ThreadSafeProgressManager): 线程安全的进度管理器，用于日志记录。
+        ignore_cols (list, optional): 忽略比对的字段列列表（照常输出，但不参与差异判定）。
 
     Returns:
         tuple: 包含以下元素的元组
@@ -600,6 +622,21 @@ def perform_full_comparison(
 
         merged_df["更新情况（标记）"] = "未改变"  # 初始化"更新情况（标记）"列为"未改变"
 
+        # 提示忽略比对字段中当前Sheet不存在的列名，帮助排查配置问题
+        # 同时将忽略列收敛到当前Sheet实际存在的列集合，避免传入不存在的列名
+        ignore_col_set = set(ignore_cols or [])
+        if ignore_col_set:
+            new_sas_names = set(
+                getattr(new_df, "attrs", {}).get("sas_file_name", list(new_df.columns))
+            )
+            unmatched_ignores = sorted(ignore_col_set - new_sas_names)
+            if unmatched_ignores:
+                progress_manager.safe_log(
+                    f"ℹ️ Sheet [{sheet_name}] 忽略比对字段中未找到: "
+                    f"{', '.join(unmatched_ignores)}"
+                )
+            ignore_cols = sorted(ignore_col_set & new_sas_names)
+
         # 打印合并后DataFrame的锚点信息
         # print(f"   合并后DF锚点（前5行）:\n{merged_df['_ANCHOR'].head().to_string()}")
 
@@ -609,11 +646,14 @@ def perform_full_comparison(
         merged_df.attrs["sas_name_to_label"] = merged_name_to_label
 
         # 执行比对，找出单元格级别的差异
+        # 注意：被忽略的列已从 non_anchor_compare_cols 剔除，因此不会产生 diff 记录；
+        #       忽略列的单元格差异也随之不参与行级标记与高亮（见 compare_columns_by_sas_names）
         dift = compare_columns_by_sas_names(  # 确保这里调用的是正确的函数
             merged_df=merged_df,  # 传入合并后的DataFrame
             key_sas_names=key_cols,  # 锚点列，比对时会忽略
             sheet_name=sheet_name,
             log_func=progress_manager.safe_log,
+            ignore_cols=ignore_cols,  # 忽略比对的字段列列表
         )
 
         has_changes = False  # 标记整个Sheet是否有数据变化
@@ -885,7 +925,9 @@ def create_anchor_by_sas_names(df, key_sas_names, log_func, sheet_name=""):
     return df
 
 
-def compare_columns_by_sas_names(merged_df, key_sas_names, sheet_name, log_func):
+def compare_columns_by_sas_names(
+    merged_df, key_sas_names, sheet_name, log_func, ignore_cols=None
+):
     """
     基于SASFieldName比对合并后的DataFrame的列差异。
     此函数会找出单元格级别的新增、删除和更新，并生成一个差异记录DataFrame。
@@ -895,6 +937,7 @@ def compare_columns_by_sas_names(merged_df, key_sas_names, sheet_name, log_func)
         sheet_name (str): 当前处理的表单名称。
         key_sas_names (list): 锚点列的SASFieldName列表，这些列将不参与比对。
         log_func (callable): 日志函数。
+        ignore_cols (list, optional): 忽略比对的字段列列表（照常输出，但不参与差异判定）。
     Returns:
         pd.DataFrame: 差异记录DataFrame，包含'row'（行索引）、'col'（列名）和'flag'（差异类别：'新增'/'删除'/'更新'）
                       如果无差异，则返回空DataFrame。
@@ -916,10 +959,15 @@ def compare_columns_by_sas_names(merged_df, key_sas_names, sheet_name, log_func)
 
     # 过滤掉锚点列，只保留需要比对的非锚点列
     # 排除_ANCHOR和更新情况（标记）列，因为它们是辅助列
+    # 排除ignore_cols中配置的忽略比对字段（照常输出，但不参与差异判定）
+    ignore_col_set = set(ignore_cols or [])
     non_anchor_compare_cols = [
         col
         for col in compare_sas_names
-        if col not in key_sas_names and col != "_ANCHOR" and col != "更新情况（标记）"
+        if col not in key_sas_names
+        and col != "_ANCHOR"
+        and col != "更新情况（标记）"
+        and col not in ignore_col_set
     ]
 
     diff_records = []  # 存储差异记录的列表，后续转换为DataFrame
@@ -1212,6 +1260,20 @@ def process_edc_multithreaded(
         all_sheets.update(old_sheet_names)
         all_sheets.update(new_sheet_names)
 
+        # 按指定表单（include_sheets）过滤：非空时仅保留列表内的Sheet
+        # 记录配置中存在但文件中不存在的指定项，帮助排查配置问题
+        include_sheets = getattr(config, "include_sheets", []) or []
+        if include_sheets:
+            unmatched_includes = sorted(
+                [s for s in include_sheets if s not in all_sheets]
+            )
+            if unmatched_includes:
+                log(
+                    f"ℹ️ 指定表单列表中存在文件中未找到的表单: {', '.join(unmatched_includes)}",
+                    log_func,
+                )
+            all_sheets = {s for s in all_sheets if s in include_sheets}
+
         # 记录将被排除的表单（在此阶段就会被过滤，因此后续函数内不会再触发"跳过"日志）
         excluded_sheets_found = sorted([s for s in all_sheets if s in exclude_sheets])
         if excluded_sheets_found:
@@ -1453,6 +1515,28 @@ def process_edc_multithreaded(
         empty_sheet.append(["说明"])
         empty_sheet.append(["所有表单均无差异或处理失败"])
         log_func("创建空结果表单")
+
+    # 对输出Sheet按指定顺序重排（汇总表在其后创建并固定于index 0）
+    # 顺序优先级：sheet_order > include_sheets（继承） > 源文件顺序（新文件为主）
+    sheet_order = getattr(config, "sheet_order", []) or []
+    if not sheet_order:
+        sheet_order = getattr(config, "include_sheets", []) or []
+    if sheet_order:
+        order_map = {name: idx for idx, name in enumerate(sheet_order)}
+        fallback_start = len(sheet_order)
+        # 未在顺序列表中的Sheet按字母序追加在末尾，保证顺序稳定可预测
+        final_wb._sheets.sort(
+            key=lambda ws: (order_map.get(ws.title, fallback_start), ws.title)
+        )
+    else:
+        # 两者都为空：按源文件顺序排列（新文件为主，旧文件独有的按其在旧文件中的相对顺序追加）
+        ordered_sheets = list(new_sheet_names)
+        old_only_sheets = [s for s in old_sheet_names if s not in set(new_sheet_names)]
+        ordered_sheets.extend(old_only_sheets)
+        sheet_rank = {name: idx for idx, name in enumerate(ordered_sheets)}
+        final_wb._sheets.sort(
+            key=lambda ws: sheet_rank.get(ws.title, len(ordered_sheets))
+        )
 
     # 在保存前插入"比对结果汇总"工作表到第一个位置
     try:

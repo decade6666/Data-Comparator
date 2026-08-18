@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-`src/backend/application` 是应用编排层，负责把 Web/API 或 GUI 传入的参数组织成一次完整比对任务。它不实现 Excel 差异算法，而是负责路径校验、配置装配、输出文件命名、依赖注入和调用领域层主流程。
+`src/backend/application` 是应用编排层，负责把 Web/API 传入的参数组织成一次完整比对任务。它不实现 Excel 差异算法，而是负责路径校验、配置装配、输出文件命名、依赖注入和调用领域层主流程。
 
 ## 入口与启动
 
@@ -23,7 +23,6 @@
 上层调用方：
 
 - `src/frontend/web_api.py`：`POST /api/compare` 将请求转换为 `ParameterDocument` 后调用 `run_comparison`。
-- `src/gui/main_window.py`：历史 GUI 复用路径校验与参数应用函数。
 
 下层依赖：
 
