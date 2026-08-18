@@ -1,0 +1,53 @@
+{
+  "id": "08-17-sync-gitee-and-remove-gui",
+  "name": "08-17-sync-gitee-and-remove-gui",
+  "title": "同步 gitee 比对配置功能并清理桌面入口",
+  "description": "移植 include_sheets/ignore_cols/sheet_ignore_cols/sheet_order 三个比对配置功能（Web API + 后端），删除旧桌面 GUI 入口与 Windows 打包脚本，重写 README 与模块文档",
+  "status": "planning",
+  "dev_type": "backend",
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "decade",
+  "assignee": "decade",
+  "createdAt": "2026-08-17",
+  "completedAt": null,
+  "branch": "worktree-feat-sync-gitee-and-remove-gui",
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "brainstorm"
+    },
+    {
+      "phase": 2,
+      "action": "research"
+    },
+    {
+      "phase": 3,
+      "action": "implement"
+    },
+    {
+      "phase": 4,
+      "action": "check"
+    },
+    {
+      "phase": 5,
+      "action": "update-spec"
+    },
+    {
+      "phase": 6,
+      "action": "record-session"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

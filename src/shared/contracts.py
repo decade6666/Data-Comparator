@@ -23,6 +23,10 @@ class ParameterDocument(TypedDict, total=False):
     exclude_sheets: List[str]
     default_keys: List[str]
     sheet_key_map: Dict[str, List[str]]
+    include_sheets: List[str]
+    ignore_cols: List[str]
+    sheet_ignore_cols: Dict[str, List[str]]
+    sheet_order: List[str]
     colors: ParameterColors
 
 

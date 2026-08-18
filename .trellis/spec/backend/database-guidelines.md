@@ -70,19 +70,24 @@ The closest equivalent is config-schema evolution for saved JSON parameter files
 
 ### Real examples
 
-`src/gui/parameter_manager.py::_ensure_parameter_structure` adds missing keys to older configs:
+`src/backend/infrastructure/config_manager.py::update_from_parameters` applies defaults for missing keys
+instead of failing hard on older documents:
 
 ```python
-for key, default_value in default_structure.items():
-    if key not in self.parameters:
-        self.parameters[key] = default_value
+self.default_keys = list(parameters.get("default_keys", []))
+self.sheet_key_map = dict(parameters.get("sheet_key_map", {}))
+self.max_workers = parameters.get("max_workers", max(1, (os.cpu_count() or 1) - 1))
 ```
 
-`src/gui/parameter_manager.py` also protects built-in templates from overwrite/delete:
+`src/backend/infrastructure/parameter_repository.py::ensure_builtin_templates` skips files that already
+exist, so built-in templates (defined in `parameter_templates.py`) are never overwritten:
 
 ```python
-if config_name in (BUILTIN_TEMPLATE_CIMS, BUILTIN_TEMPLATE_TM):
-    return False
+for name, params in templates.items():
+    config_path = self.get_config_path(name)
+    if os.path.exists(config_path):
+        continue
+    self.save_document(name, params)
 ```
 
 ### Practical rule

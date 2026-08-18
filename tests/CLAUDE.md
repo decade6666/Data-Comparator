@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-`tests` 存放 pytest 测试资产，覆盖 Web/API、应用编排、路径处理、配置仓储、进度管理、停止控制、导入烟测、日志工具、Sheet 结果容器和高亮优化器。
+`tests` 存放 pytest 测试资产，覆盖 Web/API、应用编排、路径处理、配置仓储、进度管理、停止控制、比对范围与表单顺序、导入烟测、日志工具、Sheet 结果容器和高亮优化器。
 
 ## 入口与启动
 
@@ -62,6 +62,7 @@ pytest 配置摘要：
 
 测试文件索引：
 
+- `test_compare_scope_and_order.py`：include_sheets / ignore_cols / sheet_order 比对范围与输出顺序。
 - `test_web_api.py`：FastAPI 健康检查、比对成功路径、异常映射和 422 校验。
 - `test_comparison_runner.py`：应用编排、输出路径、依赖注入、异常传播。
 - `test_processing_service.py`：路径校验、输出名清洗、输出目录创建、不可变参数更新。
@@ -83,12 +84,9 @@ pytest 配置摘要：
 
 输出路径格式、Web/API 状态码映射、`InterruptedError` 传播、`apply_processing_paths` 返回新 mapping、配置 JSON 非对象报错。
 
-### GUI 是否有充分测试？
-
-当前 GUI 主要通过导入烟测和后端测试间接覆盖。若修改 GUI 关键流程，应补充可测试的应用层函数或轻量 UI 单元测试。
-
 ## 相关文件清单
 
+- `test_compare_scope_and_order.py`
 - `test_web_api.py`
 - `test_comparison_runner.py`
 - `test_processing_service.py`

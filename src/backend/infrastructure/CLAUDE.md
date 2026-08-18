@@ -14,6 +14,8 @@
   - `ConfigManager`：管理锚点行、表头行、排除列、排除 Sheet、颜色、线程数等运行配置。
 - `parameter_repository.py`
   - `JsonParameterRepository`：保存、加载、列出、删除 JSON 配置，并创建内置模板。
+- `parameter_templates.py`
+  - `BUILTIN_TEMPLATES`：内置配置模板（CIMS / TM），受保护不可覆盖删除。
 - `file_runtime.py`
   - `check_and_remove_file_protection(...)`
   - `validate_excel_file(...)`
@@ -30,7 +32,7 @@
 
 - `src/backend/application/comparison_runner.py` 创建 `ConfigManager`。
 - `src/backend/domain/data_comparison.py` 使用配置、文件运行时和进度管理能力。
-- `src/gui/parameter_manager.py` 和 GUI 配置流程使用参数仓储能力。
+- `parameter_templates.py` 提供内置配置模板，由 `JsonParameterRepository.ensure_builtin_templates` 创建。
 
 ## 关键依赖与配置
 
@@ -79,6 +81,7 @@
 
 - `config_manager.py`
 - `parameter_repository.py`
+- `parameter_templates.py`
 - `file_runtime.py`
 - `progress_manager.py`
 - `__init__.py`

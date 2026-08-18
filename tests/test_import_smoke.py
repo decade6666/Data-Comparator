@@ -1,7 +1,3 @@
-import importlib.util
-
-import pytest
-
 from src.shared import LogFunc, ParameterDocument, ParameterRepository, ProgressReporter
 
 
@@ -35,31 +31,18 @@ def test_phase2_module_imports() -> None:
     from src.backend.domain.highlight_optimizer import HighlightOptimizer
     from src.backend.domain.processing_control import check_stop_frequently
     from src.backend.domain.sheet_process_result import SheetProcessResult
-    from src.frontend.window_utils import set_window_icon
     from src.shared.log_utils import log
-    from src.shared.resource_utils import get_resource_path
 
     assert log is not None
     assert reorder_columns_with_update_mark_first is not None
     assert check_stop_frequently is not None
     assert HighlightOptimizer is not None
     assert SheetProcessResult is not None
-    assert set_window_icon is not None
-    assert get_resource_path is not None
 
-    if importlib.util.find_spec("openpyxl") is not None:
-        from src.backend.infrastructure.config_manager import ConfigManager
+    from src.backend.infrastructure.config_manager import ConfigManager
 
-        assert ConfigManager is not None
+    assert ConfigManager is not None
 
     from src.backend.infrastructure.progress_manager import ThreadSafeProgressManager
 
     assert ThreadSafeProgressManager is not None
-
-    if importlib.util.find_spec("tkinter") is None:
-        pytest.skip("tkinter is not available in this test environment")
-
-    from src.frontend.gui_update_manager import GUIUpdateManager, GUIUpdateType
-
-    assert GUIUpdateManager is not None
-    assert GUIUpdateType is not None

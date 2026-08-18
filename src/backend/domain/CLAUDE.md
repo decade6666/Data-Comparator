@@ -33,7 +33,6 @@
 领域层被以下模块调用：
 
 - `src/backend/application/comparison_runner.py`：默认调用 `process_edc_multithreaded`。
-- `src/gui/main_window.py`：历史 GUI 后台线程调用领域流程。
 - `src/backend/infrastructure/file_runtime.py`：与文件运行时能力协同处理 Excel 文件。
 
 领域层不直接暴露 HTTP API，也不负责用户输入协议建模。
@@ -87,7 +86,7 @@
 
 ### 为什么中断要用 `InterruptedError`？
 
-测试已覆盖中断传播。上层 Web/API 会将 `InterruptedError` 映射为 HTTP 409，GUI 会用它恢复 UI 与记录用户停止。
+测试已覆盖中断传播。上层 Web/API 会将 `InterruptedError` 映射为 HTTP 409。
 
 ### `data_comparison.py` 是否适合直接继续扩展？
 

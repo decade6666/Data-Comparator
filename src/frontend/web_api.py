@@ -34,6 +34,10 @@ class CompareRequest(BaseModel):
     exclude_sheets: List[str] = Field(default_factory=list)
     default_keys: List[str] = Field(default_factory=list)
     sheet_key_map: Dict[str, List[str]] = Field(default_factory=dict)
+    include_sheets: List[str] = Field(default_factory=list)
+    ignore_cols: List[str] = Field(default_factory=list)
+    sheet_ignore_cols: Dict[str, List[str]] = Field(default_factory=dict)
+    sheet_order: List[str] = Field(default_factory=list)
     colors: CompareColors = Field(default_factory=CompareColors)
 
     def to_parameter_document(self) -> ParameterDocument:
@@ -50,6 +54,10 @@ class CompareRequest(BaseModel):
             "exclude_sheets": list(self.exclude_sheets),
             "default_keys": list(self.default_keys),
             "sheet_key_map": dict(self.sheet_key_map),
+            "include_sheets": list(self.include_sheets),
+            "ignore_cols": list(self.ignore_cols),
+            "sheet_ignore_cols": dict(self.sheet_ignore_cols),
+            "sheet_order": list(self.sheet_order),
         }
         if self.max_workers is not None:
             document = {**document, "max_workers": self.max_workers}

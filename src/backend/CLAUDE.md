@@ -4,7 +4,7 @@
 
 ## 模块职责
 
-`src/backend` 是后端分层聚合目录，包含应用编排层、领域层和基础设施层。它承接 Web/API 与历史 GUI 的请求，把外部参数转换为可执行的 Excel 数据集比对流程。
+`src/backend` 是后端分层聚合目录，包含应用编排层、领域层和基础设施层。它承接 Web/API 请求，把外部参数转换为可执行的 Excel 数据集比对流程。
 
 ## 入口与启动
 
@@ -17,7 +17,6 @@
 `backend` 不直接暴露 HTTP 接口；它被以下上层调用：
 
 - `src/frontend/web_api.py`：Web/API 请求转为 `ParameterDocument` 后调用应用层。
-- `src/gui/main_window.py`：历史 GUI 收集参数后调用领域处理流程。
 
 核心内部接口：
 
@@ -60,9 +59,9 @@
 
 ## 常见问题 (FAQ)
 
-### Web/API 和 GUI 是否共享后端？
+### Web/API 如何调用后端？
 
-是。Web/API 通过 `run_comparison` 调用后端；GUI 目前部分路径直接调用领域流程，但仍复用应用层路径校验和配置管理能力。
+Web/API 通过 `run_comparison` 调用后端；应用层完成路径校验、配置装配与输出路径生成，领域层执行比对主流程。
 
 ### 应该在哪一层做输入校验？
 
