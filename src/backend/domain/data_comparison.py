@@ -364,7 +364,8 @@ def process_single_sheet_complete(
                     effective_ignore_cols = list(config.ignore_cols or [])
                     if effective_ignore_cols:
                         log_func(
-                            f"ℹ️ Sheet [{sheet_name}] 使用全局忽略比对字段: {effective_ignore_cols}"
+                            f"ℹ️ Sheet [{sheet_name}] 使用全局忽略比对字段: "
+                            f"{effective_ignore_cols}"
                         )
 
                 # 执行完整的比对逻辑，返回比对后的DataFrame和差异信息
@@ -631,7 +632,8 @@ def perform_full_comparison(
             unmatched_ignores = sorted(ignore_col_set - new_sas_names)
             if unmatched_ignores:
                 progress_manager.safe_log(
-                    f"ℹ️ Sheet [{sheet_name}] 忽略比对字段中未找到: {', '.join(unmatched_ignores)}"
+                    f"ℹ️ Sheet [{sheet_name}] 忽略比对字段中未找到: "
+                    f"{', '.join(unmatched_ignores)}"
                 )
             ignore_cols = sorted(ignore_col_set & new_sas_names)
 
