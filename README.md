@@ -52,6 +52,136 @@ cd frontend && npm run dev
 
 部署说明：静态目录可通过环境变量 `DATASET_COMPARATOR_STATIC_DIR` 覆盖（默认指向仓库内 `frontend/dist`）；子路径部署需在构建时设置 `VITE_BASE_PATH`。
 
+### 生产环境部署（后台运行）
+
+生产环境建议使用 `systemd` 管理服务。以下示例约定：
+
+- 项目目录：`/opt/dataset-comparator`
+- 服务账号：`dataset-comparator`
+- Excel 文件和报告目录：`/data/dataset-comparator`
+- 服务端口：`8000`
+
+#### 1. 准备运行目录和 Python 环境
+
+只需首次部署时创建运行账号和目录；如果已经存在则跳过对应命令：
+
+```bash
+sudo useradd --system --user-group \
+  --home-dir /var/lib/dataset-comparator \
+  --shell /usr/sbin/nologin dataset-comparator
+
+sudo install -d -o dataset-comparator -g dataset-comparator \
+  /opt/dataset-comparator \
+  /var/lib/dataset-comparator \
+  /var/lib/dataset-comparator/logs \
+  /data/dataset-comparator
+```
+
+将项目代码部署到 `/opt/dataset-comparator` 后，安装 Python 依赖：
+
+```bash
+sudo chown -R dataset-comparator:dataset-comparator /opt/dataset-comparator
+
+sudo -u dataset-comparator -H python3 -m venv \
+  /opt/dataset-comparator/.venv
+sudo -u dataset-comparator -H \
+  /opt/dataset-comparator/.venv/bin/python -m pip install --upgrade pip
+sudo -u dataset-comparator -H sh -c '
+  cd /opt/dataset-comparator &&
+  .venv/bin/python -m pip install .
+'
+```
+
+如需使用 Web UI，再构建前端；只提供 API 时可以跳过：
+
+```bash
+sudo -u dataset-comparator -H sh -c '
+  cd /opt/dataset-comparator/frontend &&
+  npm ci &&
+  npm run build
+'
+```
+
+#### 2. 创建 systemd 服务
+
+```bash
+sudo tee /etc/systemd/system/dataset-comparator.service >/dev/null <<'EOF'
+[Unit]
+Description=Dataset Comparator Web/API
+After=network.target
+
+[Service]
+Type=simple
+User=dataset-comparator
+Group=dataset-comparator
+WorkingDirectory=/opt/dataset-comparator
+Environment="HOME=/var/lib/dataset-comparator"
+Environment="PATH=/opt/dataset-comparator/.venv/bin"
+Environment="DATASET_COMPARATOR_WEB_HOST=127.0.0.1"
+Environment="DATASET_COMPARATOR_WEB_PORT=8000"
+Environment="DATASET_COMPARATOR_STATIC_DIR=/opt/dataset-comparator/frontend/dist"
+Environment="DATASET_COMPARATOR_BROWSE_ROOTS=/data/dataset-comparator"
+ExecStart=/opt/dataset-comparator/.venv/bin/python -m src.main_web
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+加载并启动服务：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now dataset-comparator
+sudo systemctl status dataset-comparator --no-pager
+curl http://127.0.0.1:8000/health
+```
+
+常用运维命令：
+
+```bash
+# 查看实时日志
+sudo journalctl -u dataset-comparator -f
+
+# 重启或停止服务
+sudo systemctl restart dataset-comparator
+sudo systemctl stop dataset-comparator
+```
+
+默认只监听 `127.0.0.1`，建议在前面配置反向代理并启用 HTTPS。若不使用反向代理而需要从其他机器访问，将 `DATASET_COMPARATOR_WEB_HOST` 改为 `0.0.0.0`，并通过防火墙限制访问来源。当前异步任务状态保存在进程内，服务应保持单进程运行，不要直接扩展为多个 worker。
+
+#### 3. 没有 systemd 时使用 nohup
+
+`nohup` 适合临时或没有 systemd 的环境；进程异常退出时不会自动重启，生产环境优先使用上面的 systemd 方式：
+
+```bash
+sudo -u dataset-comparator -H sh -c '
+  cd /opt/dataset-comparator &&
+  nohup env \
+    HOME=/var/lib/dataset-comparator \
+    DATASET_COMPARATOR_WEB_HOST=127.0.0.1 \
+    DATASET_COMPARATOR_WEB_PORT=8000 \
+    DATASET_COMPARATOR_STATIC_DIR=/opt/dataset-comparator/frontend/dist \
+    DATASET_COMPARATOR_BROWSE_ROOTS=/data/dataset-comparator \
+    .venv/bin/python -m src.main_web \
+    >> /var/lib/dataset-comparator/logs/web.log 2>&1 &
+  echo $! > /var/lib/dataset-comparator/dataset-comparator.pid
+'
+
+curl http://127.0.0.1:8000/health
+```
+
+查看日志或停止 `nohup` 进程：
+
+```bash
+tail -f /var/lib/dataset-comparator/logs/web.log
+sudo kill "$(sudo cat /var/lib/dataset-comparator/dataset-comparator.pid)"
+```
+
 ### 方式二：纯 API
 
 - 启动 Web/API 服务：
