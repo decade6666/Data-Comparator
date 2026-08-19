@@ -72,3 +72,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 完成 Web UI 重构与上传持久化
+
+**Date**: 2026-08-18
+**Task**: 完成 Web UI 重构与上传持久化
+**Branch**: `worktree-feat-web-ui`
+
+### Summary
+
+完成配置管理、比对操作、帮助内容和删除数据开关的 Web UI 优化；新增上传索引持久化与恢复能力，补充后端测试并创建 PR #3。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c1234a3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
