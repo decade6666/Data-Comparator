@@ -17,12 +17,19 @@
   - `build_output_path(...) -> str`：生成比对报告输出路径。
   - `apply_processing_paths(...) -> ParameterDocument`：返回包含规范化路径的新参数文档。
   - `sanitize_output_name(...) -> str`：清洗配置名，生成安全文件名。
+- `job_manager.py`
+  - `JobManager` / `JobState` / `JobStatus`：后台比对任务的生命周期管理（pending -> running -> completed/failed/cancelled）。
+  - `progress_func` / `log_func` / `stop_flag` 的接线：把领域层已支持但此前未接入 Web 的回调写入任务状态。
 
 ## 对外接口
 
 上层调用方：
 
-- `src/frontend/web_api.py`：`POST /api/compare` 将请求转换为 `ParameterDocument` 后调用 `run_comparison`。
+- `src/frontend/web_api.py`：`POST /api/compare` 将请求转换为 `ParameterDocument` 后调用 `run_comparison`；`/api/jobs` 系列端点使用 `JobManager` 管理异步任务。
+
+约束：
+
+- `JobManager` 强制**单任务串行**：`domain/processing_control.py` 的 `_global_stop_flag` 是进程级全局状态，并发任务会互相覆盖停止标志。
 
 下层依赖：
 
@@ -57,6 +64,7 @@
 
 - `tests/test_comparison_runner.py`
 - `tests/test_processing_service.py`
+- `tests/test_job_manager.py`
 
 重点行为：
 
@@ -65,6 +73,7 @@
 - 输出目录不存在时应创建。
 - `apply_processing_paths` 必须返回新 mapping，不要就地修改原参数。
 - `run_comparison` 应传播底层异常，不要隐藏失败。
+- `JobManager` 运行中再提交必须拒绝；`InterruptedError` 映射为 `cancelled` 状态；已结束任务保留 30 分钟后淘汰。
 
 ## 常见问题 (FAQ)
 
@@ -92,4 +101,5 @@
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-18 | feat | 新增 `job_manager.py` 异步任务管理器，接入进度/日志/停止回调。 |
 | 2026-05-24T03:25:49 | docs | 初始化 `backend/application` 模块 Claude 指南。 |
