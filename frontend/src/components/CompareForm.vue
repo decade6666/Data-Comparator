@@ -40,27 +40,20 @@ function patch(key, value) {
 <template>
   <div class="panel">
     <div class="panel-header">路径选择</div>
-    <div class="panel-body">
+    <div class="panel-body file-row">
       <PathSelector
-        label="旧版本文件"
+        label="旧版本"
         :model-value="config.old_file_path"
         :upload-id="config.old_file_upload_id"
         @update:model-value="patch('old_file_path', $event)"
         @update:upload-id="patch('old_file_upload_id', $event)"
       />
       <PathSelector
-        label="新版本文件"
+        label="新版本"
         :model-value="config.new_file_path"
         :upload-id="config.new_file_upload_id"
         @update:model-value="patch('new_file_path', $event)"
         @update:upload-id="patch('new_file_upload_id', $event)"
-      />
-      <PathSelector
-        label="输出目录"
-        :model-value="config.output_directory"
-        :allow-upload="false"
-        browse-type="directories"
-        @update:model-value="patch('output_directory', $event)"
       />
     </div>
   </div>
@@ -86,7 +79,6 @@ function patch(key, value) {
         v-for="card in CARDS"
         :key="card.key"
         :title="card.title"
-        :hint="card.hint"
         :type="card.type"
         :value="config[card.key]"
         @edit="editing = card"
@@ -97,9 +89,7 @@ function patch(key, value) {
   <ParameterEditDialog
     v-model="editing"
     :value="editing ? config[editing.key] : []"
-    :old-file-path="config.old_file_path"
     :old-file-upload-id="config.old_file_upload_id"
-    :new-file-path="config.new_file_path"
     :new-file-upload-id="config.new_file_upload_id"
     @save="(value) => { if (editing) { patch(editing.key, value); } }"
   />

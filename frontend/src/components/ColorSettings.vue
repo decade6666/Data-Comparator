@@ -6,9 +6,9 @@ const props = defineProps({
 const emit = defineEmits(['update:colors'])
 
 const ITEMS = [
-  { key: 'highlight_fill', label: '更新高亮色' },
-  { key: 'missing_sheet_tab', label: '删除标签色' },
-  { key: 'new_sheet_tab', label: '新增标签色' },
+  { key: 'highlight_fill', label: '更新' },
+  { key: 'missing_sheet_tab', label: '删除' },
+  { key: 'new_sheet_tab', label: '新增' },
 ]
 
 function updateColor(key, value) {
@@ -23,17 +23,18 @@ function updateColor(key, value) {
   <div class="panel">
     <div class="panel-header">颜色设置</div>
     <div class="panel-body color-row">
-      <div v-for="item in ITEMS" :key="item.key" class="color-item">
-        <span class="color-swatch" :style="{ background: colors[item.key] }"></span>
-        <span class="color-label">{{ item.label }}</span>
-        <el-color-picker
-          :model-value="colors[item.key]"
-          :predefine="['#FFE5E5', '#DC143C', '#00FF00']"
-          @update:model-value="updateColor(item.key, $event)"
-        />
-        <code class="color-hex">{{ colors[item.key] }}</code>
-      </div>
-      <div class="color-hint">颜色作用于生成的 Excel 报告，不影响界面显示。</div>
+      <template v-for="(item, index) in ITEMS" :key="item.key">
+        <div v-if="index > 0" class="color-divider" />
+        <div class="color-item">
+          <span class="color-label">{{ item.label }}</span>
+          <el-color-picker
+            :model-value="colors[item.key]"
+            :predefine="['#FFE5E5', '#DC143C', '#00FF00']"
+            @update:model-value="updateColor(item.key, $event)"
+          />
+          <code class="color-hex">{{ colors[item.key] }}</code>
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -50,9 +51,10 @@ function updateColor(key, value) {
   color: var(--color-text-muted);
 }
 
-.color-hint {
-  width: 100%;
-  color: var(--color-text-muted);
-  font-size: var(--font-xs);
+.color-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--color-border);
+  flex-shrink: 0;
 }
 </style>

@@ -35,19 +35,27 @@ function emptyConfig() {
 
 export const config = reactive(emptyConfig())
 
+// 会话内的文件状态：加载配置预设时跳过，不覆盖当前已上传的文件
+const FILE_STATE_KEYS = [
+  'old_file_path', 'new_file_path', 'output_directory',
+  'old_file_upload_id', 'new_file_upload_id',
+]
+
 export function applyDocument(doc) {
   for (const key of Object.keys(emptyConfig())) {
+    if (FILE_STATE_KEYS.includes(key)) continue
     if (key in doc) {
       config[key] = doc[key]
     }
   }
 }
 
+// 保存配置预设用：文件属于会话内临时上传，不入库，路径恒为空串
 export function buildParameters() {
   return {
-    old_file_path: config.old_file_path,
-    new_file_path: config.new_file_path,
-    output_directory: config.output_directory,
+    old_file_path: '',
+    new_file_path: '',
+    output_directory: '',
     config_name: config.config_name,
     anchor_row_num: config.anchor_row_num,
     header_row_num: config.header_row_num,
@@ -62,6 +70,15 @@ export function buildParameters() {
     sheet_ignore_cols: config.sheet_ignore_cols,
     sheet_order: config.sheet_order,
     colors: { ...config.colors },
+  }
+}
+
+// 提交任务用：附带会话内上传文件 id（路径留空，后端据此走临时目录）
+export function buildJobPayload() {
+  return {
+    ...buildParameters(),
+    old_file_upload_id: config.old_file_upload_id,
+    new_file_upload_id: config.new_file_upload_id,
   }
 }
 

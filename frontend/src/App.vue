@@ -5,7 +5,7 @@ import { Moon, Sunny, Setting, QuestionFilled } from '@element-plus/icons-vue'
 import { useTheme } from './composables/useTheme'
 import { useSidebarResize } from './composables/useSidebarResize'
 import { useJob } from './composables/useJob'
-import { config, buildParameters, DEFAULT_WORKERS } from './composables/useConfig'
+import { config, buildJobPayload, DEFAULT_WORKERS } from './composables/useConfig'
 import AdvancedSettingsDialog from './components/AdvancedSettingsDialog.vue'
 import ActionBar from './components/ActionBar.vue'
 import ProgressPanel from './components/ProgressPanel.vue'
@@ -25,8 +25,12 @@ const running = computed(() => ['pending', 'running', 'cancelling'].includes(job
 const finished = computed(() => job.status.value === 'completed')
 
 async function startCompare() {
+  if (!config.old_file_upload_id || !config.new_file_upload_id) {
+    ElMessage.warning('请先上传旧版本文件与新版本文件')
+    return
+  }
   try {
-    await job.submit(buildParameters())
+    await job.submit(buildJobPayload())
   } catch (err) {
     ElMessage.error(err.message)
   }
@@ -120,12 +124,12 @@ function applyMaxWorkers(value) {
     <div class="help-body">
       <h4>数据比对流程</h4>
       <ol>
-        <li>选择旧版本文件与新版本文件（可上传，也可填写服务器路径）。</li>
-        <li>指定输出目录，或留空使用默认临时目录。</li>
+        <li>上传旧版本文件与新版本文件（支持 .xlsx / .xls 格式）。</li>
         <li>按需调整锚点行、表头行、颜色与各类比对参数。</li>
         <li>点击「开始比对」，观察进度与日志；可随时「停止比对」。</li>
         <li>完成后点击「下载报告」获取 Excel 比对结果。</li>
       </ol>
+      <p>报告默认输出到服务器临时目录，可在比对完成后通过「下载报告」取回。</p>
       <h4>参数说明</h4>
       <ul>
         <li><b>排除字段</b>：读取时直接丢弃的列。</li>

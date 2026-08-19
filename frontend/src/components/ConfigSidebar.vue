@@ -154,7 +154,6 @@ onMounted(() => {
         :show-file-list="false"
         :before-upload="importConfig"
         accept=".json"
-        style="display: inline-block"
       >
         <el-button size="small" plain :icon="Upload">导入</el-button>
       </el-upload>
@@ -174,18 +173,7 @@ onMounted(() => {
       {{ name }}
     </div>
 
-    <div class="sidebar-title">内置模板</div>
-    <div
-      v-for="name in builtinTemplates"
-      :key="name"
-      class="config-item"
-      :class="{ active: name === currentName }"
-      @click="select(name)"
-    >
-      {{ name }}
-    </div>
-
-    <div v-if="!configs.length && !builtinTemplates.length" class="empty-hint" style="padding: 0 16px">
+    <div v-if="!configs.length" class="empty-hint" style="padding: 0 16px">
       （暂无配置）
     </div>
   </div>

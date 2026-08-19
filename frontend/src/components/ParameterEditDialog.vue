@@ -7,9 +7,7 @@ import { api } from '../composables/useApi'
 const props = defineProps({
   modelValue: { type: Object, default: null }, // { key, title, type, hint }
   value: { type: [Array, Object], default: () => [] },
-  oldFilePath: { type: String, default: '' },
   oldFileUploadId: { type: String, default: null },
-  newFilePath: { type: String, default: '' },
   newFileUploadId: { type: String, default: null },
 })
 
@@ -57,6 +55,7 @@ function dictRowsToValue() {
 }
 
 function openDialog() {
+  sheetNames.value = []
   const model = props.modelValue
   if (!model) return
   if (model.type === 'list' || model.type === 'sheetlist') {
@@ -71,14 +70,12 @@ function openDialog() {
 async function discoverSheets() {
   loadingSheets.value = true
   try {
-    const filePath = props.oldFilePath || props.newFilePath
     const uploadId = props.oldFileUploadId || props.newFileUploadId
-    if (!filePath && !uploadId) {
-      ElMessage.warning('请先选择旧版本或新版本文件')
+    if (!uploadId) {
+      ElMessage.warning('请先上传旧版本或新版本文件')
       return
     }
-    const params = uploadId ? `upload_id=${uploadId}` : `file_path=${encodeURIComponent(filePath)}`
-    const body = await api.get(`/sheets?${params}`)
+    const body = await api.get(`/sheets?upload_id=${uploadId}`)
     sheetNames.value = body.sheets
     ElMessage.success(`发现 ${body.sheets.length} 个表单`)
   } catch (err) {
@@ -132,7 +129,7 @@ function save() {
     <div v-if="modelValue" class="edit-body">
       <div v-if="modelValue.type === 'sheetlist'" class="discover-row">
         <el-button size="small" :icon="Refresh" :loading="loadingSheets" @click="discoverSheets">
-          发现表单名称
+          扫描上传文件
         </el-button>
         <div v-if="sheetNames.length" class="sheet-checkboxes">
           <el-checkbox

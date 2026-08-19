@@ -1,27 +1,15 @@
 <script setup>
-import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { UploadFilled, FolderOpened } from '@element-plus/icons-vue'
+import { UploadFilled, Close } from '@element-plus/icons-vue'
 import { api } from '../composables/useApi'
-import BrowseDialog from './BrowseDialog.vue'
 
 const props = defineProps({
   label: { type: String, required: true },
   modelValue: { type: String, default: '' },
   uploadId: { type: String, default: null },
-  allowUpload: { type: Boolean, default: true },
-  browseType: { type: String, default: 'all' },
 })
 
 const emit = defineEmits(['update:modelValue', 'update:uploadId', 'uploaded'])
-
-const browseVisible = ref(false)
-const uploadRef = ref(null)
-
-function chooseFromBrowser(path) {
-  emit('update:modelValue', path)
-  emit('update:uploadId', null)
-}
 
 async function handleUpload(file) {
   const formData = new FormData()
@@ -37,41 +25,61 @@ async function handleUpload(file) {
   }
   return false
 }
+
+function clear() {
+  emit('update:modelValue', '')
+  emit('update:uploadId', null)
+}
 </script>
 
 <template>
-  <div class="path-row">
-    <span class="path-label">{{ label }}</span>
-    <el-input
-      :model-value="modelValue"
-      placeholder="填写服务器路径，或上传文件"
-      clearable
-      @update:model-value="emit('update:modelValue', $event)"
-    />
-    <el-button :icon="FolderOpened" @click="browseVisible = true">浏览</el-button>
+  <div class="file-selector">
+    <span class="file-label">{{ label }}</span>
     <el-upload
-      v-if="allowUpload"
-      ref="uploadRef"
       :show-file-list="false"
       :before-upload="handleUpload"
       accept=".xlsx,.xls"
     >
-      <el-button :icon="UploadFilled">上传</el-button>
+      <el-button size="small" :icon="UploadFilled">上传</el-button>
     </el-upload>
+    <span v-if="modelValue" class="file-name" :title="modelValue">{{ modelValue }}</span>
+    <span v-else class="file-name file-name-empty">未选择文件</span>
+    <el-button
+      v-if="modelValue"
+      :icon="Close"
+      size="small"
+      text
+      @click="clear"
+    />
   </div>
-
-  <BrowseDialog
-    v-model="browseVisible"
-    :browse-type="browseType"
-    @select="chooseFromBrowser"
-  />
 </template>
 
 <style scoped>
-.path-label {
+.file-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 1;
+  min-width: 0;
+}
+
+.file-label {
   flex-shrink: 0;
-  width: 100px;
   color: var(--color-text-secondary);
   font-size: var(--font-sm);
+}
+
+.file-name {
+  flex: 1;
+  /* 覆盖 flex item 默认 min-width:auto，否则 text-overflow 不生效 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-sm);
+}
+
+.file-name-empty {
+  color: var(--color-text-muted);
 }
 </style>

@@ -4,7 +4,6 @@ import { Edit } from '@element-plus/icons-vue'
 
 const props = defineProps({
   title: { type: String, required: true },
-  hint: { type: String, default: '' },
   type: { type: String, required: true },
   value: { type: [Array, Object], default: () => [] },
 })
@@ -30,8 +29,7 @@ const tags = computed(() => {
   <div class="parameter-card">
     <span class="parameter-card-title">{{ title }}</span>
     <div class="parameter-card-tags">
-      <div v-if="!tags.length" class="empty-hint">（未设置）{{ hint ? '· ' + hint : '' }}</div>
-      <div v-else class="tag-cloud">
+      <div v-if="tags.length" class="tag-cloud">
         <el-tag v-for="(tag, index) in tags" :key="index" size="small" type="info">
           {{ tag }}
         </el-tag>

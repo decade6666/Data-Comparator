@@ -325,7 +325,7 @@ body {
 .color-row {
   display: flex;
   align-items: center;
-  gap: var(--space-lg);
+  gap: var(--space-xl);
   flex-wrap: wrap;
 }
 
@@ -333,14 +333,6 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-}
-
-.color-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1px solid var(--color-border);
-  flex-shrink: 0;
 }
 
 /* ——— 侧栏配置列表 ——— */
@@ -354,8 +346,19 @@ body {
 .sidebar-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 0 12px 10px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+/* 重置 Element Plus 全局 .el-button+.el-button{margin-left:12px}，
+   避免间距叠加 flex gap，且换行后左边缘参差不齐 */
+.sidebar-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.sidebar-actions .el-upload {
+  display: inline-flex;
 }
 
 .config-item {
@@ -382,16 +385,11 @@ body {
   border-left-color: #fff;
 }
 
-/* ——— 路径选择 ——— */
-.path-row {
+/* ——— 文件上传行 ——— */
+.file-row {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
-}
-
-.path-row .el-input {
-  flex: 1;
+  gap: var(--space-lg);
 }
 
 /* ——— 暗色模式 ——— */
