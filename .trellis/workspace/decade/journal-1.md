@@ -105,3 +105,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: README 生产环境后台部署步骤
+
+**Date**: 2026-08-19
+**Task**: README 生产环境后台部署步骤
+**Branch**: `worktree-docs-production-deploy`
+
+### Summary
+
+新增 README 生产环境后台部署章节（systemd 推荐 + nohup 备用）：运行账号/目录准备、Python venv 依赖安装、Web UI 前端构建、systemd 服务配置与运维命令、健康检查、单进程限制说明。纯文档变更，已推送分支并创建 PR #4。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c6835d6` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

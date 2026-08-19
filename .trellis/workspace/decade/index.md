@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
-- **Last Active**: 2026-08-18
+- **Total Sessions**: 4
+- **Last Active**: 2026-08-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~107 | Active |
+| `journal-1.md` | ~140 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-08-19 | README 生产环境后台部署步骤 | `c6835d6` | `worktree-docs-production-deploy` |
 | 3 | 2026-08-18 | 完成 Web UI 重构与上传持久化 | `c1234a3` | `worktree-feat-web-ui` |
 | 2 | 2026-08-17 | 同步 gitee 比对配置功能并清理桌面入口 | `c26212e` | `worktree-feat-sync-gitee-and-remove-gui` |
 | 1 | 2026-05-24 | Frontend/backend split | `36e9186`, `d6e0933` | `main` |
