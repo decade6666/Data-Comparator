@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Plus, Delete, Close, Check } from '@element-plus/icons-vue'
 import { api } from '../composables/useApi'
 
 const props = defineProps({
@@ -128,9 +128,14 @@ function save() {
   >
     <div v-if="modelValue" class="edit-body">
       <div v-if="modelValue.type === 'sheetlist'" class="discover-row">
-        <el-button size="small" :icon="Refresh" :loading="loadingSheets" @click="discoverSheets">
-          扫描上传文件
-        </el-button>
+        <el-button
+          size="small"
+          :icon="Refresh"
+          :loading="loadingSheets"
+          title="扫描上传文件"
+          aria-label="扫描上传文件"
+          @click="discoverSheets"
+        />
         <div v-if="sheetNames.length" class="sheet-checkboxes">
           <el-checkbox
             v-for="name in sheetNames"
@@ -145,7 +150,13 @@ function save() {
 
       <template v-if="modelValue.type === 'dict'">
         <div class="dict-toolbar">
-          <el-button size="small" @click="addDictRow">添加行</el-button>
+          <el-button
+            size="small"
+            :icon="Plus"
+            title="添加行"
+            aria-label="添加行"
+            @click="addDictRow"
+          />
         </div>
         <div class="dict-table">
           <div class="dict-row dict-header">
@@ -156,9 +167,15 @@ function save() {
           <div v-for="(row, index) in dictRows" :key="index" class="dict-row">
             <el-input v-model="row.sheet" size="small" placeholder="Sheet 名称" />
             <el-input v-model="row.items" size="small" placeholder="字段1, 字段2" />
-            <el-button size="small" type="danger" text @click="removeDictRow(index)">
-              删除
-            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              text
+              :icon="Delete"
+              title="删除此行"
+              aria-label="删除此行"
+              @click="removeDictRow(index)"
+            />
           </div>
         </div>
         <div class="edit-hint">{{ modelValue.hint }}</div>
@@ -176,8 +193,19 @@ function save() {
     </div>
 
     <template #footer>
-      <el-button @click="emit('update:modelValue', null)">取消</el-button>
-      <el-button type="primary" @click="save">确定</el-button>
+      <el-button
+        :icon="Close"
+        title="取消"
+        aria-label="取消"
+        @click="emit('update:modelValue', null)"
+      />
+      <el-button
+        type="primary"
+        :icon="Check"
+        title="确定"
+        aria-label="确定"
+        @click="save"
+      />
     </template>
   </el-dialog>
 </template>

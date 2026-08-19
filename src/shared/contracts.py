@@ -12,6 +12,8 @@ class ParameterColors(TypedDict, total=False):
 class ParameterDocument(TypedDict, total=False):
     old_file_path: str
     new_file_path: str
+    old_file_upload_id: str
+    new_file_upload_id: str
     output_directory: str
     anchor_row_num: int
     header_row_num: int

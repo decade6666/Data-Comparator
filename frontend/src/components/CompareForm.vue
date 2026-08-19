@@ -1,6 +1,7 @@
 <script setup>
-import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { ref, watch } from 'vue'
+import { saveConfigWithPrompt, revertConfig } from '../composables/useConfigState'
 import PathSelector from './PathSelector.vue'
 import StructureRow from './StructureRow.vue'
 import ColorSettings from './ColorSettings.vue'
@@ -11,9 +12,23 @@ const props = defineProps({
   config: { type: Object, required: true },
 })
 
-const emit = defineEmits(['config-changed'])
+const emit = defineEmits(['config-changed', 'update:config'])
 
 const editing = ref(null)
+
+async function saveParameters() {
+  try {
+    const name = await saveConfigWithPrompt()
+    if (name) ElMessage.success(`已保存：${name}`)
+  } catch (err) {
+    ElMessage.error(err.message)
+  }
+}
+
+function cancelSave() {
+  revertConfig()
+  ElMessage.success('已撤销未保存的修改')
+}
 
 const CARDS = [
   { key: 'common_cols', title: '排除字段', type: 'list', hint: '读取时直接丢弃的列' },
@@ -39,7 +54,7 @@ function patch(key, value) {
 
 <template>
   <div class="panel">
-    <div class="panel-header">路径选择</div>
+    <div class="panel-header">比对文件</div>
     <div class="panel-body file-row">
       <PathSelector
         label="旧版本"
@@ -58,19 +73,21 @@ function patch(key, value) {
     </div>
   </div>
 
-  <StructureRow
-    :anchor-row-num="config.anchor_row_num"
-    :header-row-num="config.header_row_num"
-    :merge-deleted-data="config.merge_deleted_data"
-    @update:anchor-row-num="patch('anchor_row_num', $event)"
-    @update:header-row-num="patch('header_row_num', $event)"
-    @update:merge-deleted-data="patch('merge_deleted_data', $event)"
-  />
+  <div class="structure-color-row">
+    <StructureRow
+      :anchor-row-num="config.anchor_row_num"
+      :header-row-num="config.header_row_num"
+      :merge-deleted-data="config.merge_deleted_data"
+      @update:anchor-row-num="patch('anchor_row_num', $event)"
+      @update:header-row-num="patch('header_row_num', $event)"
+      @update:merge-deleted-data="patch('merge_deleted_data', $event)"
+    />
 
-  <ColorSettings
-    :colors="config.colors"
-    @update:colors="patch('colors', $event)"
-  />
+    <ColorSettings
+      :colors="config.colors"
+      @update:colors="patch('colors', $event)"
+    />
+  </div>
 
   <div class="panel">
     <div class="panel-header">比对参数</div>
@@ -83,6 +100,12 @@ function patch(key, value) {
         :value="config[card.key]"
         @edit="editing = card"
       />
+    </div>
+    <div class="panel-footer config-save-footer">
+      <el-button size="small" @click="cancelSave">取消保存</el-button>
+      <el-button size="small" type="primary" @click="saveParameters">
+        保存配置
+      </el-button>
     </div>
   </div>
 

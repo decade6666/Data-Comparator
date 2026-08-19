@@ -192,8 +192,10 @@ def _api_log(message: str) -> None:
 
 
 _job_manager = JobManager()
-_upload_store = UploadStore()
 _config_repository = JsonParameterRepository()
+_upload_store = UploadStore(
+    config_dir_getter=lambda: _config_repository.get_configs_dir()
+)
 _UPLOAD_CLEANUP_INTERVAL_SECONDS = 30 * 60
 
 
@@ -300,6 +302,20 @@ def upload_file(file: UploadFile = File(...)) -> UploadResponse:
         filename=record.original_name,
         size=record.size,
     )
+
+
+@app.get("/api/uploads/{upload_id}")
+def get_upload_status(upload_id: str) -> Dict[str, Any]:
+    """返回上传文件是否仍可用于恢复后的配置。"""
+    record = _upload_store.get(upload_id)
+    if record is None:
+        return {"upload_id": upload_id, "exists": False}
+    return {
+        "upload_id": upload_id,
+        "exists": True,
+        "filename": record.original_name,
+        "size": record.size,
+    }
 
 
 @app.get("/api/browse", response_model=BrowseResponse)

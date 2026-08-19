@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus,
@@ -10,18 +10,24 @@ import {
 } from '@element-plus/icons-vue'
 import { api } from '../composables/useApi'
 import {
-  config,
-  applyDocument,
-  saveCurrentConfig,
-  loadConfig,
+  builtinTemplates,
+  clearSelectedConfig,
+  currentName,
+  openNewConfigDialog,
+  restoreLastConfig,
+  saveConfig,
+  selectConfig,
+} from '../composables/useConfigState'
+import {
   listConfigs,
   deleteConfig,
   copyConfig,
 } from '../composables/useConfig'
 
 const configs = ref([])
-const builtinTemplates = ref([])
-const currentName = ref('')
+const userConfigs = computed(() =>
+  configs.value.filter((name) => !builtinTemplates.value.includes(name))
+)
 
 async function refresh() {
   const body = await listConfigs()
@@ -29,60 +35,41 @@ async function refresh() {
   builtinTemplates.value = body.builtin_templates
 }
 
-function select(name) {
-  loadConfig(name)
-    .then(() => {
-      currentName.value = name
-      ElMessage.success(`已加载配置：${name}`)
-    })
-    .catch((err) => ElMessage.error(err.message))
-}
-
-async function saveCurrent() {
-  if (!currentName.value) {
-    ElMessage.warning('请先选择或新建一个配置')
-    return
-  }
+async function select(name) {
   try {
-    await saveCurrentConfig(currentName.value)
-    ElMessage.success(`已保存：${currentName.value}`)
-    await refresh()
+    await selectConfig(name)
+    ElMessage.success(`已加载配置：${name}`)
   } catch (err) {
     ElMessage.error(err.message)
   }
 }
 
 async function createNew() {
+  const name = await openNewConfigDialog()
+  if (!name) return
   try {
-    const { value } = await ElMessageBox.prompt('请输入新配置名称', '新建配置', {
-      confirmButtonText: '创建',
-      cancelButtonText: '取消',
-      inputValidator: (v) => (v && v.trim() ? true : '名称不能为空'),
-    })
-    const name = value.trim()
-    await saveCurrentConfig(name)
-    currentName.value = name
+    await saveConfig(name)
     await refresh()
     ElMessage.success(`已创建：${name}`)
   } catch (err) {
-    if (err !== 'cancel') ElMessage.error(err.message)
+    ElMessage.error(err.message)
   }
 }
 
-async function removeCurrent() {
-  if (!currentName.value) return
-  if (builtinTemplates.value.includes(currentName.value)) {
+async function removeConfig(name) {
+  if (!name) return
+  if (builtinTemplates.value.includes(name)) {
     ElMessage.warning('内置模板不能删除')
     return
   }
   try {
     await ElMessageBox.confirm(
-      `确定删除配置「${currentName.value}」吗？`,
+      `确定删除配置「${name}」吗？`,
       '删除配置',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
-    await deleteConfig(currentName.value)
-    currentName.value = ''
+    await deleteConfig(name)
+    if (currentName.value === name) clearSelectedConfig()
     await refresh()
     ElMessage.success('已删除')
   } catch (err) {
@@ -90,8 +77,8 @@ async function removeCurrent() {
   }
 }
 
-async function duplicateCurrent() {
-  if (!currentName.value) return
+async function duplicateConfig(name) {
+  if (!name) return
   try {
     const { value } = await ElMessageBox.prompt(
       '请输入新配置名称',
@@ -99,18 +86,20 @@ async function duplicateCurrent() {
       {
         confirmButtonText: '复制',
         cancelButtonText: '取消',
-        inputValidator: (v) => (v && v.trim() ? true : '名称不能为空'),
+        inputValidator: (value) => (value && value.trim() ? true : '名称不能为空'),
       }
     )
-    await copyConfig(currentName.value, value.trim())
+    const newName = value.trim()
+    await copyConfig(name, newName)
     await refresh()
+    await selectConfig(newName)
     ElMessage.success('复制成功')
   } catch (err) {
     if (err !== 'cancel') ElMessage.error(err.message)
   }
 }
 
-async function exportCurrent() {
+function exportCurrent() {
   if (!currentName.value) return
   window.open(
     api.apiUrl(`/configs/${encodeURIComponent(currentName.value)}/export`),
@@ -131,8 +120,19 @@ async function importConfig(file) {
   return false
 }
 
-onMounted(() => {
+watch(currentName, (name, previousName) => {
+  if (!name || name === previousName) return
   refresh().catch((err) => ElMessage.error(err.message))
+})
+
+onMounted(async () => {
+  try {
+    await refresh()
+    const restored = await restoreLastConfig(userConfigs.value)
+    if (restored) ElMessage.success(`已恢复配置：${currentName.value}`)
+  } catch (err) {
+    ElMessage.error(err.message)
+  }
 })
 </script>
 
@@ -140,40 +140,69 @@ onMounted(() => {
   <div>
     <div class="sidebar-title">配置管理</div>
     <div class="sidebar-actions">
-      <el-button size="small" type="primary" plain :icon="Plus" @click="createNew">
-        新建
-      </el-button>
-      <el-button size="small" plain @click="saveCurrent">保存</el-button>
-      <el-button size="small" plain :icon="Delete" @click="removeCurrent">
-        删除
-      </el-button>
-      <el-button size="small" plain :icon="CopyDocument" @click="duplicateCurrent">
-        复制
-      </el-button>
+      <el-button
+        size="small"
+        type="primary"
+        plain
+        :icon="Plus"
+        title="新建配置"
+        aria-label="新建配置"
+        @click="createNew"
+      />
       <el-upload
         :show-file-list="false"
         :before-upload="importConfig"
         accept=".json"
       >
-        <el-button size="small" plain :icon="Upload">导入</el-button>
+        <el-button
+          size="small"
+          plain
+          :icon="Upload"
+          title="导入配置"
+          aria-label="导入配置"
+        />
       </el-upload>
-      <el-button size="small" plain :icon="Download" @click="exportCurrent">
-        导出
-      </el-button>
+      <el-button
+        size="small"
+        plain
+        :icon="Download"
+        title="导出当前配置"
+        aria-label="导出当前配置"
+        @click="exportCurrent"
+      />
     </div>
 
-    <div class="sidebar-title" style="padding-top: 4px">我的配置</div>
     <div
-      v-for="name in configs"
+      v-for="name in userConfigs"
       :key="name"
       class="config-item"
       :class="{ active: name === currentName }"
+      :title="name"
       @click="select(name)"
     >
-      {{ name }}
+      <span class="config-item-name">{{ name }}</span>
+      <span class="config-item-actions" @click.stop>
+        <el-button
+          size="small"
+          text
+          :icon="CopyDocument"
+          title="复制配置"
+          :aria-label="`复制配置：${name}`"
+          @click.stop="duplicateConfig(name)"
+        />
+        <el-button
+          size="small"
+          text
+          type="danger"
+          :icon="Delete"
+          title="删除配置"
+          :aria-label="`删除配置：${name}`"
+          @click.stop="removeConfig(name)"
+        />
+      </span>
     </div>
 
-    <div v-if="!configs.length" class="empty-hint" style="padding: 0 16px">
+    <div v-if="!userConfigs.length" class="empty-hint" style="padding: 0 16px">
       （暂无配置）
     </div>
   </div>

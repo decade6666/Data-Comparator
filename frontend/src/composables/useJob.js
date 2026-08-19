@@ -83,6 +83,21 @@ export function useJob() {
     window.open(api.apiUrl(`/jobs/${jobId.value}/download`), '_blank')
   }
 
+  // 将累积的日志行导出为 .txt 文件（纯前端 Blob 下载，无需后端端点）
+  function downloadLogs() {
+    if (!logLines.value.length) return
+    const blob = new Blob([logLines.value.join('\n')], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `比对日志-${outputName.value || 'log'}.txt`
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+
   return {
     jobId,
     status,
@@ -95,6 +110,7 @@ export function useJob() {
     submit,
     cancel,
     download,
+    downloadLogs,
     reset,
   }
 }

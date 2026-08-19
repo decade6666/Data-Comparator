@@ -35,6 +35,12 @@ const tags = computed(() => {
         </el-tag>
       </div>
     </div>
-    <el-button :icon="Edit" size="small" @click="$emit('edit')">修改</el-button>
+    <el-button
+      :icon="Edit"
+      size="small"
+      title="修改"
+      aria-label="修改"
+      @click="$emit('edit')"
+    />
   </div>
 </template>

@@ -9,7 +9,7 @@ export const DEFAULT_COLORS = {
 
 export const DEFAULT_WORKERS = 4
 
-function emptyConfig() {
+export function emptyConfig() {
   return {
     old_file_path: '',
     new_file_path: '',
@@ -35,26 +35,39 @@ function emptyConfig() {
 
 export const config = reactive(emptyConfig())
 
-// 会话内的文件状态：加载配置预设时跳过，不覆盖当前已上传的文件
-const FILE_STATE_KEYS = [
-  'old_file_path', 'new_file_path', 'output_directory',
-  'old_file_upload_id', 'new_file_upload_id',
-]
+function cloneValue(value) {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value))
+}
 
-export function applyDocument(doc) {
-  for (const key of Object.keys(emptyConfig())) {
-    if (FILE_STATE_KEYS.includes(key)) continue
+const FILE_STATE_KEYS = new Set([
+  'old_file_path',
+  'new_file_path',
+  'old_file_upload_id',
+  'new_file_upload_id',
+])
+
+export function applyDocument(doc, options = {}) {
+  const preserveFiles = options.preserveFiles === true
+  const defaults = emptyConfig()
+  for (const key of Object.keys(defaults)) {
+    if (key === 'output_directory') continue
+    if (preserveFiles && FILE_STATE_KEYS.has(key)) continue
+    if (FILE_STATE_KEYS.has(key)) {
+      config[key] = key in doc ? cloneValue(doc[key]) : defaults[key]
+      continue
+    }
     if (key in doc) {
-      config[key] = doc[key]
+      config[key] = cloneValue(doc[key])
     }
   }
 }
 
-// 保存配置预设用：文件属于会话内临时上传，不入库，路径恒为空串
+// 保存配置预设用：记住文件名与上传 id，输出目录仍由当前会话决定。
 export function buildParameters() {
-  return {
-    old_file_path: '',
-    new_file_path: '',
+  const document = {
+    old_file_path: config.old_file_path,
+    new_file_path: config.new_file_path,
     output_directory: '',
     config_name: config.config_name,
     anchor_row_num: config.anchor_row_num,
@@ -71,12 +84,22 @@ export function buildParameters() {
     sheet_order: config.sheet_order,
     colors: { ...config.colors },
   }
+  if (config.old_file_upload_id) {
+    document.old_file_upload_id = config.old_file_upload_id
+  }
+  if (config.new_file_upload_id) {
+    document.new_file_upload_id = config.new_file_upload_id
+  }
+  return document
 }
 
-// 提交任务用：附带会话内上传文件 id（路径留空，后端据此走临时目录）
+// 提交任务用：附带会话内上传文件 id；路径强制留空，
+// 避免后端 _resolve_job_input 因「路径 + 上传 id 同时提供」返回 400
 export function buildJobPayload() {
   return {
     ...buildParameters(),
+    old_file_path: '',
+    new_file_path: '',
     old_file_upload_id: config.old_file_upload_id,
     new_file_upload_id: config.new_file_upload_id,
   }
