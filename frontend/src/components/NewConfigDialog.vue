@@ -1,0 +1,116 @@
+<script setup>
+import { ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { api } from '../composables/useApi'
+import { applyDocument } from '../composables/useConfig'
+import {
+  builtinTemplates,
+  cancelNewConfigDialog,
+  newConfigVisible,
+  resolveNewConfigDialog,
+} from '../composables/useConfigState'
+
+const name = ref('')
+const loadingTemplate = ref(false)
+
+watch(newConfigVisible, (visible) => {
+  if (visible) name.value = ''
+})
+
+function templateLabel(templateName) {
+  return templateName.replace(/^【模板】/, '')
+}
+
+async function importTemplate(templateName) {
+  loadingTemplate.value = true
+  try {
+    const document = await api.get(`/configs/${encodeURIComponent(templateName)}`)
+    applyDocument(document, { preserveFiles: true })
+    ElMessage.success(`已导入模板：${templateLabel(templateName)}`)
+  } catch (err) {
+    ElMessage.error(err.message)
+  } finally {
+    loadingTemplate.value = false
+  }
+}
+
+function confirm() {
+  const trimmedName = name.value.trim()
+  if (!trimmedName) {
+    ElMessage.warning('配置名称不能为空')
+    return
+  }
+  resolveNewConfigDialog(trimmedName)
+}
+
+function cancel() {
+  cancelNewConfigDialog()
+}
+</script>
+
+<template>
+  <el-dialog
+    :model-value="newConfigVisible"
+    title="新建配置"
+    width="440px"
+    append-to-body
+    :close-on-click-modal="false"
+    @update:model-value="(visible) => !visible && cancel()"
+  >
+    <el-form label-position="top" @submit.prevent="confirm">
+      <el-form-item label="配置名称">
+        <el-input
+          v-model="name"
+          autofocus
+          placeholder="请输入新配置名称"
+          @keyup.enter="confirm"
+        />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <div class="new-config-footer">
+        <el-dropdown
+          trigger="click"
+          :disabled="loadingTemplate || !builtinTemplates.length"
+          @command="importTemplate"
+        >
+          <el-button :loading="loadingTemplate">导入模板</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="templateName in builtinTemplates"
+                :key="templateName"
+                :command="templateName"
+              >
+                {{ templateLabel(templateName) }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <div class="new-config-footer-actions">
+          <el-button @click="cancel">取消</el-button>
+          <el-button type="primary" @click="confirm">创建</el-button>
+        </div>
+      </div>
+    </template>
+  </el-dialog>
+</template>
+
+<style scoped>
+.new-config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.new-config-footer-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.new-config-footer-actions .el-button + .el-button {
+  margin-left: 0;
+}
+</style>

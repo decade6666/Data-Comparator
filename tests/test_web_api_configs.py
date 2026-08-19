@@ -75,6 +75,22 @@ def test_save_config_persists_document(monkeypatch, tmp_path) -> None:
     assert repo.load_document("CIMS对比") == MINIMAL_DOC
 
 
+def test_config_round_trip_preserves_upload_ids(monkeypatch, tmp_path) -> None:
+    repo = _install_fresh_repo(monkeypatch, tmp_path)
+    client = TestClient(web_api.app)
+    document = {
+        **MINIMAL_DOC,
+        "old_file_upload_id": "old-upload",
+        "new_file_upload_id": "new-upload",
+    }
+
+    response = client.put("/api/configs/带上传文件", json=document)
+
+    assert response.status_code == 200
+    assert repo.load_document("带上传文件") == document
+    assert client.get("/api/configs/带上传文件").json() == document
+
+
 def test_save_builtin_template_returns_400(monkeypatch, tmp_path) -> None:
     _install_fresh_repo(monkeypatch, tmp_path)
     client = TestClient(web_api.app)

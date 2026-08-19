@@ -1,11 +1,20 @@
 <script setup>
 import { computed } from 'vue'
+import { CircleClose, Document, Download, VideoPlay } from '@element-plus/icons-vue'
 
 const props = defineProps({
   progress: { type: Number, default: 0 },
   message: { type: String, default: '准备就绪' },
   status: { type: String, default: 'idle' },
+  hasLogs: { type: Boolean, default: false },
 })
+
+defineEmits(['start', 'stop', 'download-report', 'download-logs'])
+
+const running = computed(() =>
+  ['pending', 'running', 'cancelling'].includes(props.status)
+)
+const finished = computed(() => props.status === 'completed')
 
 const statusText = computed(() => {
   const map = {
@@ -30,7 +39,51 @@ const barColor = computed(() => {
 
 <template>
   <div class="panel">
-    <div class="panel-header">进度</div>
+    <div class="panel-header">
+      <span>进度</span>
+      <div class="panel-header-actions">
+        <el-button
+          v-if="!running"
+          size="small"
+          type="primary"
+          plain
+          :icon="VideoPlay"
+          title="开始比对"
+          aria-label="开始比对"
+          @click="$emit('start')"
+        />
+        <el-button
+          v-else
+          size="small"
+          type="danger"
+          plain
+          :icon="CircleClose"
+          :disabled="props.status === 'cancelling'"
+          title="停止比对"
+          aria-label="停止比对"
+          @click="$emit('stop')"
+        />
+        <el-button
+          v-if="finished"
+          size="small"
+          type="success"
+          plain
+          :icon="Download"
+          title="下载报告"
+          aria-label="下载报告"
+          @click="$emit('download-report')"
+        />
+        <el-button
+          v-if="hasLogs"
+          size="small"
+          plain
+          :icon="Document"
+          title="下载日志"
+          aria-label="下载日志"
+          @click="$emit('download-logs')"
+        />
+      </div>
+    </div>
     <div class="panel-body">
       <div class="progress-label">
         <span>{{ message }}</span>

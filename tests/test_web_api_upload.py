@@ -33,6 +33,43 @@ def test_upload_xlsx_returns_upload_id(monkeypatch, tmp_path) -> None:
     assert web_api._upload_store.resolve(upload_id) is not None
 
 
+def test_upload_status_returns_filename_and_size(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
+    )
+    client = TestClient(web_api.app)
+    response = client.post(
+        "/api/upload",
+        files={"file": ("old.xlsx", io.BytesIO(b"data"), "application/octet-stream")},
+    )
+    upload_id = response.json()["upload_id"]
+
+    status_response = client.get(f"/api/uploads/{upload_id}")
+
+    assert status_response.status_code == 200
+    assert status_response.json() == {
+        "upload_id": upload_id,
+        "exists": True,
+        "filename": "old.xlsx",
+        "size": 4,
+    }
+
+
+def test_missing_upload_status_returns_exists_false(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
+    )
+    client = TestClient(web_api.app)
+
+    response = client.get("/api/uploads/missing-upload")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "upload_id": "missing-upload",
+        "exists": False,
+    }
+
+
 def test_upload_xls_is_accepted(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
         web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))

@@ -1,0 +1,53 @@
+{
+  "id": "web-ui-restructure",
+  "name": "web-ui-restructure",
+  "title": "Web UI 优化：14 项界面重构",
+  "description": "",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "decade",
+  "assignee": "decade",
+  "createdAt": "2026-08-18",
+  "completedAt": "2026-08-18",
+  "branch": null,
+  "base_branch": "worktree-feat-web-ui",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "brainstorm"
+    },
+    {
+      "phase": 2,
+      "action": "research"
+    },
+    {
+      "phase": 3,
+      "action": "implement"
+    },
+    {
+      "phase": 4,
+      "action": "check"
+    },
+    {
+      "phase": 5,
+      "action": "update-spec"
+    },
+    {
+      "phase": 6,
+      "action": "record-session"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

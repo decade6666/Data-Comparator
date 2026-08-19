@@ -36,12 +36,18 @@ const emit = defineEmits([
           @update:model-value="emit('update:headerRowNum', $event)"
         />
       </span>
-      <el-checkbox
-        :model-value="mergeDeletedData"
-        @update:model-value="emit('update:mergeDeletedData', $event)"
-      >
-        合并删除数据
-      </el-checkbox>
+      <div class="merge-data-toggle">
+        <span>删除数据</span>
+        <el-switch
+          :model-value="mergeDeletedData"
+          inline-prompt
+          active-text="保留"
+          inactive-text="舍弃"
+          :width="56"
+          :aria-label="mergeDeletedData ? '删除数据：保留' : '删除数据：舍弃'"
+          @update:model-value="emit('update:mergeDeletedData', $event)"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -54,11 +60,16 @@ const emit = defineEmits([
   flex-wrap: wrap;
 }
 
-.structure-item {
+.structure-item,
+.merge-data-toggle {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
   color: var(--color-text-secondary);
   font-size: var(--font-sm);
+}
+
+.structure-item,
+.merge-data-toggle {
+  gap: var(--space-sm);
 }
 </style>

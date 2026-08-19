@@ -40,7 +40,12 @@ function clear() {
       :before-upload="handleUpload"
       accept=".xlsx,.xls"
     >
-      <el-button size="small" :icon="UploadFilled">上传</el-button>
+      <el-button
+        size="small"
+        :icon="UploadFilled"
+        title="上传文件"
+        aria-label="上传文件"
+      />
     </el-upload>
     <span v-if="modelValue" class="file-name" :title="modelValue">{{ modelValue }}</span>
     <span v-else class="file-name file-name-empty">未选择文件</span>
@@ -49,6 +54,8 @@ function clear() {
       :icon="Close"
       size="small"
       text
+      title="清除文件"
+      aria-label="清除文件"
       @click="clear"
     />
   </div>
