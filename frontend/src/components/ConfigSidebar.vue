@@ -5,6 +5,7 @@ import {
   Plus,
   Delete,
   CopyDocument,
+  EditPen,
   Upload,
   Download,
 } from '@element-plus/icons-vue'
@@ -13,6 +14,7 @@ import {
   builtinTemplates,
   clearSelectedConfig,
   currentName,
+  openEditConfigDialog,
   openNewConfigDialog,
   restoreLastConfig,
   saveConfig,
@@ -22,6 +24,7 @@ import {
   listConfigs,
   deleteConfig,
   copyConfig,
+  renameConfig,
 } from '../composables/useConfig'
 
 const configs = ref([])
@@ -72,6 +75,22 @@ async function removeConfig(name) {
     if (currentName.value === name) clearSelectedConfig()
     await refresh()
     ElMessage.success('已移至回收站')
+  } catch (err) {
+    if (err !== 'cancel') ElMessage.error(err.message)
+  }
+}
+
+async function editConfig(name) {
+  try {
+    await selectConfig(name)
+    const newName = await openEditConfigDialog(name)
+    if (!newName) return
+    const renamed = newName !== name
+    if (renamed) await renameConfig(name, newName)
+    await saveConfig(newName)
+    await refresh()
+    await selectConfig(newName)
+    ElMessage.success(renamed ? `已重命名项目：${newName}` : `已保存：${newName}`)
   } catch (err) {
     if (err !== 'cancel') ElMessage.error(err.message)
   }
@@ -191,6 +210,14 @@ onMounted(async () => {
     >
       <span class="config-item-name">{{ name }}</span>
       <span class="config-item-actions" @click.stop>
+        <el-button
+          size="small"
+          text
+          :icon="EditPen"
+          title="编辑项目"
+          :aria-label="`编辑项目：${name}`"
+          @click.stop="editConfig(name)"
+        />
         <el-button
           size="small"
           text

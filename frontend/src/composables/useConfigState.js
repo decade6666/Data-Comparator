@@ -18,9 +18,13 @@ export const currentName = ref('')
 export const savedSnapshot = ref(null)
 export const builtinTemplates = ref([])
 export const newConfigVisible = ref(false)
+export const editConfigVisible = ref(false)
+export const editConfigName = ref('')
 
 let newConfigResolver = null
 let dialogBackup = null
+let editConfigResolver = null
+let editDialogBackup = null
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
@@ -113,5 +117,32 @@ export function cancelNewConfigDialog() {
   const resolver = newConfigResolver
   newConfigResolver = null
   newConfigVisible.value = false
+  resolver?.(null)
+}
+
+export function openEditConfigDialog(name) {
+  if (editConfigResolver) editConfigResolver(null)
+  editDialogBackup = clone(config)
+  editConfigName.value = name
+  editConfigVisible.value = true
+  return new Promise((resolve) => {
+    editConfigResolver = resolve
+  })
+}
+
+export function resolveEditConfigDialog(newName) {
+  const resolver = editConfigResolver
+  editConfigResolver = null
+  editDialogBackup = null
+  editConfigVisible.value = false
+  resolver?.(newName.trim())
+}
+
+export function cancelEditConfigDialog() {
+  if (editDialogBackup) Object.assign(config, editDialogBackup)
+  editDialogBackup = null
+  const resolver = editConfigResolver
+  editConfigResolver = null
+  editConfigVisible.value = false
   resolver?.(null)
 }

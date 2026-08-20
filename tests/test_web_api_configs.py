@@ -58,6 +58,54 @@ def test_copy_config(auth_client) -> None:
     )
 
 
+def test_rename_config(auth_client) -> None:
+    auth_client.put("/api/configs/源配置", json=MINIMAL_DOC)
+    response = auth_client.post(
+        "/api/configs/源配置/rename", json={"new_name": "改名配置"}
+    )
+    assert response.status_code == 200
+    assert response.json() == {"name": "改名配置", "renamed": True}
+    assert auth_client.get("/api/configs/改名配置").json() == MINIMAL_DOC
+    assert auth_client.get("/api/configs/源配置").status_code == 404
+
+
+def test_rename_config_errors(auth_client) -> None:
+    auth_client.put("/api/configs/源配置", json=MINIMAL_DOC)
+    auth_client.put("/api/configs/目标配置", json=MINIMAL_DOC)
+    assert (
+        auth_client.post(
+            "/api/configs/源配置/rename", json={"new_name": "目标配置"}
+        ).status_code
+        == 409
+    )
+    assert (
+        auth_client.post(
+            "/api/configs/不存在/rename", json={"new_name": "新配置"}
+        ).status_code
+        == 404
+    )
+    assert (
+        auth_client.post(
+            f"/api/configs/源配置/rename",
+            json={"new_name": BUILTIN_TEMPLATE_TM},
+        ).status_code
+        == 400
+    )
+    assert (
+        auth_client.post(
+            f"/api/configs/{BUILTIN_TEMPLATE_CIMS}/rename",
+            json={"new_name": "新配置"},
+        ).status_code
+        == 400
+    )
+    assert (
+        auth_client.post(
+            "/api/configs/源配置/rename", json={"new_name": ""}
+        ).status_code
+        == 422
+    )
+
+
 def test_export_and_import_config(auth_client) -> None:
     auth_client.put("/api/configs/导出配置", json=MINIMAL_DOC)
     exported = auth_client.get("/api/configs/导出配置/export")

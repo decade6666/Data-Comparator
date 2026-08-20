@@ -139,3 +139,7 @@ export async function deleteConfig(name) {
 export async function copyConfig(name, newName) {
   return api.post(`/configs/${encodeURIComponent(name)}/copy`, { new_name: newName })
 }
+
+export async function renameConfig(name, newName) {
+  return api.post(`/configs/${encodeURIComponent(name)}/rename`, { new_name: newName })
+}

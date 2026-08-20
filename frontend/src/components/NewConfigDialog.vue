@@ -1,20 +1,27 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api } from '../composables/useApi'
 import { applyDocument } from '../composables/useConfig'
 import {
   builtinTemplates,
+  cancelEditConfigDialog,
   cancelNewConfigDialog,
+  editConfigName,
+  editConfigVisible,
   newConfigVisible,
+  resolveEditConfigDialog,
   resolveNewConfigDialog,
 } from '../composables/useConfigState'
 
 const name = ref('')
 const loadingTemplate = ref(false)
 
-watch(newConfigVisible, (visible) => {
-  if (visible) name.value = ''
+const visible = computed(() => newConfigVisible.value || editConfigVisible.value)
+const isEdit = computed(() => editConfigVisible.value)
+
+watch(visible, (open) => {
+  if (open) name.value = isEdit.value ? editConfigName.value : ''
 })
 
 function templateLabel(templateName) {
@@ -40,22 +47,24 @@ function confirm() {
     ElMessage.warning('项目名称不能为空')
     return
   }
-  resolveNewConfigDialog(trimmedName)
+  if (isEdit.value) resolveEditConfigDialog(trimmedName)
+  else resolveNewConfigDialog(trimmedName)
 }
 
 function cancel() {
-  cancelNewConfigDialog()
+  if (isEdit.value) cancelEditConfigDialog()
+  else cancelNewConfigDialog()
 }
 </script>
 
 <template>
   <el-dialog
-    :model-value="newConfigVisible"
-    title="新建项目"
+    :model-value="visible"
+    :title="isEdit ? '编辑项目' : '新建项目'"
     width="440px"
     append-to-body
     :close-on-click-modal="false"
-    @update:model-value="(visible) => !visible && cancel()"
+    @update:model-value="(v) => !v && cancel()"
   >
     <el-form label-position="top" @submit.prevent="confirm">
       <el-form-item label="项目名称">
@@ -90,7 +99,7 @@ function cancel() {
         </el-dropdown>
         <div class="new-config-footer-actions">
           <el-button @click="cancel">取消</el-button>
-          <el-button type="primary" @click="confirm">创建</el-button>
+          <el-button type="primary" @click="confirm">{{ isEdit ? '保存' : '创建' }}</el-button>
         </div>
       </div>
     </template>

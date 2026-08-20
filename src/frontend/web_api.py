@@ -531,7 +531,7 @@ def delete_config(
 
 
 class CopyConfigRequest(BaseModel):
-    new_name: str
+    new_name: str = Field(..., min_length=1)
 
 
 @app.post("/api/configs/{name}/copy")
@@ -550,6 +550,27 @@ def copy_config(
         raise HTTPException(status_code=409, detail="目标项目已存在")
     repository.save_document(request.new_name, document)
     return {"name": request.new_name, "copied": True}
+
+
+@app.post("/api/configs/{name}/rename")
+def rename_config(
+    name: str,
+    request: CopyConfigRequest,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    if name in BUILTIN_TEMPLATES:
+        raise HTTPException(status_code=400, detail="不能修改内置模板")
+    if request.new_name in BUILTIN_TEMPLATES:
+        raise HTTPException(status_code=400, detail="不能覆盖内置模板")
+    repository = _repository_for(current_user.id)
+    document = repository.load_document(name)
+    if document is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    if repository.load_document(request.new_name) is not None:
+        raise HTTPException(status_code=409, detail="目标项目已存在")
+    repository.save_document(request.new_name, document)
+    repository.delete_document(name)
+    return {"name": request.new_name, "renamed": True}
 
 
 _EXPORT_STRIP_FIELDS = (
