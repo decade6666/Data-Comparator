@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Moon, Sunny, Setting, QuestionFilled, Lock, SwitchButton } from '@element-plus/icons-vue'
+import { Moon, Sunny, Setting, QuestionFilled } from '@element-plus/icons-vue'
 import { useTheme } from './composables/useTheme'
 import { useSidebarResize } from './composables/useSidebarResize'
 import { useJob } from './composables/useJob'
@@ -25,7 +25,7 @@ const auth = useAuth()
 // 嵌套在对象里的 computed ref 在模板中不会自动解包（_unref(auth).isAuthenticated
 // 拿到的是 ref 对象本身、恒为真），必须解构成顶层绑定后再用于模板。
 const { isAuthenticated, isAdmin } = auth
-const { scanning, scanProgress, resetSheets } = useSheets()
+const { scanning, resetSheets } = useSheets()
 const parameterHelp = [
   ['排除字段', PARAMETER_DESCRIPTIONS.common_cols],
   ['比对表单', PARAMETER_DESCRIPTIONS.sheet_scope],
@@ -103,6 +103,11 @@ function logout() {
   resetSheets()
   job.reset()
 }
+
+function openPasswordFromSettings() {
+  settingsVisible.value = false
+  passwordVisible.value = true
+}
 </script>
 
 <template>
@@ -125,25 +130,27 @@ function logout() {
           </button>
           <button
             class="icon-btn"
-            title="修改密码"
-            aria-label="修改密码"
-            @click="passwordVisible = true"
+            title="高级设置"
+            aria-label="高级设置"
+            @click="settingsVisible = true"
           >
-            <el-icon :size="16"><Lock /></el-icon>
-          </button>
-          <button
-            class="icon-btn"
-            title="退出登录"
-            aria-label="退出登录"
-            @click="logout"
-          >
-            <el-icon :size="16"><SwitchButton /></el-icon>
+            <el-icon :size="16"><Setting /></el-icon>
           </button>
         </div>
       </header>
       <div class="app-admin">
         <UserAdminView />
       </div>
+      <AdvancedSettingsDialog
+        v-model="settingsVisible"
+        :max-workers="config.max_workers"
+        :is-dark="isDark"
+        :is-admin="true"
+        @update:max-workers="applyMaxWorkers"
+        @update:is-dark="toggleTheme"
+        @change-password="openPasswordFromSettings"
+        @logout="logout"
+      />
     </template>
     <template v-else>
     <header class="app-header">
@@ -176,22 +183,6 @@ function logout() {
       >
         <el-icon :size="16"><Setting /></el-icon>
       </button>
-      <button
-        class="icon-btn"
-        title="修改密码"
-        aria-label="修改密码"
-        @click="passwordVisible = true"
-      >
-        <el-icon :size="16"><Lock /></el-icon>
-      </button>
-      <button
-        class="icon-btn"
-        title="退出登录"
-        aria-label="退出登录"
-        @click="logout"
-      >
-        <el-icon :size="16"><SwitchButton /></el-icon>
-      </button>
     </div>
   </header>
 
@@ -207,7 +198,6 @@ function logout() {
         :status="job.status.value"
         :has-logs="job.logLines.value.length > 0"
         :scanning="scanning"
-        :scan-progress="scanProgress"
         @start="startCompare"
         @stop="stopCompare"
         @download-logs="job.downloadLogs()"
@@ -237,23 +227,23 @@ function logout() {
         <li>在「结构设置」中设置锚点行号、表头行号，并选择保留或舍弃删除数据。</li>
         <li>在「颜色设置」中设置更新、删除、新增内容的标记颜色。</li>
         <li>在「比对参数」中按需设置排除字段、排除表单、默认锚点及其他表单范围参数。</li>
-        <li>点击「保存配置」保存参数；点击进度卡片中的「开始比对」开始处理。</li>
+        <li>点击「保存项目」保存参数；点击进度卡片中的「开始比对」开始处理。</li>
         <li>比对过程中可点击「停止比对」；完成后点击「下载报告」获取 Excel 结果。</li>
       </ol>
       <p>
-        开始比对时会自动保存当前配置。上传文件和配置保存在服务器临时目录中，刷新页面后会自动恢复最近使用的配置；如果文件已过期或被删除，需要重新上传。
+        开始比对时会自动保存当前项目。上传文件和项目保存在服务器临时目录中，刷新页面后会自动恢复最近使用的项目；如果文件已过期或被删除，需要重新上传。
       </p>
 
-      <h4>🧰 配置管理</h4>
+      <h4>🧰 项目管理</h4>
       <ul>
-        <li><b>新建：</b>点击「新建配置」，输入名称；也可以在弹窗左下角选择 TM 或 CIMS 模板导入参数。</li>
-        <li><b>保存：</b>在「比对参数」卡片底部点击「保存配置」，保存当前参数与已上传文件。</li>
-        <li><b>取消保存：</b>撤销最近一次保存之后的修改，恢复到当前配置的已保存状态。</li>
-        <li><b>复制：</b>点击配置名称右侧的复制按钮，输入新名称即可复制当前配置。</li>
-        <li><b>删除：</b>点击配置名称右侧的删除按钮，删除选中的配置。</li>
-        <li><b>导入：</b>使用配置管理区域的导入按钮，从 JSON 文件导入配置。</li>
-        <li><b>导出：</b>选中配置后使用导出按钮，将配置保存为 JSON 文件。</li>
-        <li>内置 TM / CIMS 模板只在新建配置弹窗中使用，不会出现在配置列表中。</li>
+        <li><b>新建：</b>点击「新建项目」，输入名称；也可以在弹窗左下角选择 TM 或 CIMS 模板导入参数。</li>
+        <li><b>保存：</b>在「比对参数」卡片底部点击「保存项目」，保存当前参数与已上传文件。</li>
+        <li><b>取消保存：</b>撤销最近一次保存之后的修改，恢复到当前项目的已保存状态。</li>
+        <li><b>复制：</b>点击项目名称右侧的复制按钮，输入新名称即可复制当前项目。</li>
+        <li><b>删除：</b>点击项目名称右侧的删除按钮，删除选中的项目。</li>
+        <li><b>导入：</b>使用项目管理区域的导入按钮，从 JSON 文件导入项目。</li>
+        <li><b>导出：</b>选中项目后使用导出按钮，将项目保存为 JSON 文件。</li>
+        <li>内置 TM / CIMS 模板只在新建项目弹窗中使用，不会出现在项目列表中。</li>
       </ul>
 
       <h4>🔧 参数设置</h4>
@@ -296,8 +286,11 @@ function logout() {
     v-model="settingsVisible"
     :max-workers="config.max_workers"
     :is-dark="isDark"
+    :is-admin="false"
     @update:max-workers="applyMaxWorkers"
     @update:is-dark="toggleTheme"
+    @change-password="openPasswordFromSettings"
+    @logout="logout"
   />
   </template>
 

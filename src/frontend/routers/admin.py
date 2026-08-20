@@ -33,6 +33,8 @@ _UPLOAD_FIELDS = (
     "new_file_upload_id",
     "old_file_path",
     "new_file_path",
+    "old_file_sheets",
+    "new_file_sheets",
 )
 _AGE_UNITS = ("day", "month", "year")
 _SIZE_UNITS = ("MB", "GB")
@@ -50,9 +52,9 @@ def _repository_for(user_id: int) -> JsonParameterRepository:
 
 
 def _validate_config_name(name: str) -> None:
-    """配置名校验：拒绝空名、路径穿越与内置模板名。"""
+    """项目名校验：拒绝空名、路径穿越与内置模板名。"""
     if not name or "/" in name or "\\" in name or ".." in name:
-        raise HTTPException(status_code=400, detail="配置名不合法")
+        raise HTTPException(status_code=400, detail="项目名不合法")
     if name in BUILTIN_TEMPLATES:
         raise HTTPException(status_code=400, detail="不能操作内置模板")
 
@@ -288,7 +290,7 @@ def batch_move_configs(
         except (HTTPException, OSError):
             failed += 1
     if moved == 0 and failed > 0:
-        raise HTTPException(status_code=400, detail="全部配置转移失败")
+        raise HTTPException(status_code=400, detail="全部项目转移失败")
     return {"status": "success", "moved": moved}
 
 

@@ -21,7 +21,7 @@ const userForm = reactive({ id: null, username: '', password: '' })
 const showResetPassword = ref(false)
 const passwordForm = reactive({ id: null, username: '', password: '' })
 
-// 配置列表（两步式批量操作）
+// 项目列表（两步式批量操作）
 const showConfigList = ref(false)
 const configListUser = ref(null)
 const configNames = ref([])
@@ -128,7 +128,7 @@ async function submitPasswordReset() {
 async function deleteUser(user) {
   try {
     await ElMessageBox.confirm(
-      `确定删除用户 "${user.username}" 吗？该用户的所有配置将进入回收站。`,
+      `确定删除用户 "${user.username}" 吗？该用户的所有项目将进入回收站。`,
       '删除用户',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
@@ -140,7 +140,7 @@ async function deleteUser(user) {
   }
 }
 
-// ---- 配置列表批量操作 ----
+// ---- 项目列表批量操作 ----
 
 function resetConfigList() {
   configListUser.value = null
@@ -203,7 +203,7 @@ async function executeBatchCopy() {
       target_user_id: batchTargetUserId.value,
     })
     const successCount = (results || []).filter((r) => r.status === 'success').length
-    ElMessage.success(`成功复制 ${successCount} 个配置`)
+    ElMessage.success(`成功复制 ${successCount} 个项目`)
     resetConfigList()
     await refresh()
   } catch (err) {
@@ -219,7 +219,7 @@ async function executeBatchMove() {
       source_user_id: configListUser.value.id,
       target_user_id: batchTargetUserId.value,
     })
-    ElMessage.success(`成功迁移 ${body.moved} 个配置`)
+    ElMessage.success(`成功迁移 ${body.moved} 个项目`)
     resetConfigList()
     await refresh()
   } catch (err) {
@@ -231,15 +231,15 @@ async function executeBatchDelete() {
   if (!selectedConfigNames.value.length) return
   try {
     await ElMessageBox.confirm(
-      `确定要删除选中的 ${selectedConfigNames.value.length} 个配置吗？删除后如需恢复，请联系管理员。`,
-      '删除配置',
+      `确定要删除选中的 ${selectedConfigNames.value.length} 个项目吗？删除后如需恢复，请联系管理员。`,
+      '删除项目',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
     const body = await api.post('/admin/configs/batch-delete', {
       config_names: selectedConfigNames.value,
       user_id: configListUser.value.id,
     })
-    ElMessage.success(`已删除 ${body.deleted} 个配置`)
+    ElMessage.success(`已删除 ${body.deleted} 个项目`)
     resetConfigList()
     await refresh()
   } catch (err) {
@@ -268,14 +268,14 @@ async function openRecycleBin() {
 async function restoreConfig(item) {
   try {
     await ElMessageBox.confirm(
-      `确定恢复配置 "${item.original_config_name}" 吗？`,
-      '恢复配置',
+      `确定恢复项目 "${item.original_config_name}" 吗？`,
+      '恢复项目',
       { type: 'warning', confirmButtonText: '恢复', cancelButtonText: '取消' }
     )
     const ownerExists = users.value.some((u) => u.id === item.original_owner_id)
     if (ownerExists) {
       await api.post(`/admin/recycle-bin/${item.id}/restore`, {})
-      ElMessage.success('配置已恢复')
+      ElMessage.success('项目已恢复')
       await loadRecycleBin()
     } else {
       // 孤儿条目：原用户已删除，行内选择目标用户
@@ -294,7 +294,7 @@ async function confirmOrphanRestore() {
     await api.post(`/admin/recycle-bin/${item.id}/restore`, {
       target_user_id: restoreTargetUserId.value,
     })
-    ElMessage.success('配置已恢复')
+    ElMessage.success('项目已恢复')
     restoringItem.value = null
     restoreTargetUserId.value = null
     await loadRecycleBin()
@@ -306,7 +306,7 @@ async function confirmOrphanRestore() {
 async function hardDeleteConfig(item) {
   try {
     await ElMessageBox.confirm(
-      `确定彻底删除配置 "${item.original_config_name}" 吗？此操作不可逆！`,
+      `确定彻底删除项目 "${item.original_config_name}" 吗？此操作不可逆！`,
       '彻底删除',
       { type: 'warning', confirmButtonText: '彻底删除', cancelButtonText: '取消' }
     )
@@ -452,8 +452,8 @@ onMounted(refresh)
           <el-tooltip content="重置密码" placement="top">
             <el-button size="small" link :icon="Key" aria-label="重置密码" @click="openResetPassword(row)" />
           </el-tooltip>
-          <el-tooltip v-if="!row.is_admin" content="配置列表" placement="top">
-            <el-button size="small" link :icon="FolderOpened" aria-label="配置列表" @click="openConfigList(row)" />
+          <el-tooltip v-if="!row.is_admin" content="项目列表" placement="top">
+            <el-button size="small" link :icon="FolderOpened" aria-label="项目列表" @click="openConfigList(row)" />
           </el-tooltip>
           <el-tooltip v-if="!row.is_admin" content="删除" placement="top">
             <el-button size="small" link type="danger" :icon="Delete" aria-label="删除" :disabled="row.is_admin" @click="deleteUser(row)" />
@@ -492,12 +492,12 @@ onMounted(refresh)
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showConfigList" :title="`配置列表 - ${configListUser?.username || ''}`" width="600px" append-to-body @close="resetConfigList">
+    <el-dialog v-model="showConfigList" :title="`项目列表 - ${configListUser?.username || ''}`" width="600px" append-to-body @close="resetConfigList">
       <template v-if="configListStep === 'select'">
-        <div class="batch-hint">请先选择要操作的配置，再选择 复制 / 迁移 / 删除。</div>
+        <div class="batch-hint">请先选择要操作的项目，再选择 复制 / 迁移 / 删除。</div>
         <el-table :data="configNames" @selection-change="onConfigSelectionChange" border max-height="320">
           <el-table-column type="selection" width="50" align="center" />
-          <el-table-column label="配置名称">
+          <el-table-column label="项目名称">
             <template #default="{ row }">{{ row }}</template>
           </el-table-column>
         </el-table>
@@ -522,16 +522,16 @@ onMounted(refresh)
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showRecycleBin" title="配置回收站" width="860px" append-to-body>
+    <el-dialog v-model="showRecycleBin" title="项目回收站" width="860px" append-to-body>
       <div class="tab-header">
-        <span class="workspace-subtitle">仅显示已软删除配置</span>
+        <span class="workspace-subtitle">仅显示已软删除项目</span>
         <div class="tab-header-actions">
           <el-button @click="openCleanupPolicy">清理策略</el-button>
           <el-button @click="loadRecycleBin" :loading="loadingRecycle">刷新</el-button>
         </div>
       </div>
       <el-table v-if="recycleItems.length" :data="recycleItems" v-loading="loadingRecycle" border>
-        <el-table-column label="配置名称">
+        <el-table-column label="项目名称">
           <template #default="{ row }">{{ row.original_config_name }}</template>
         </el-table-column>
         <el-table-column label="原所有者" width="120">
@@ -596,7 +596,7 @@ onMounted(refresh)
                 <el-option label="GB" value="GB" />
               </el-select>
             </div>
-            <div class="cleanup-help">超出后从最早删除的配置开始逐个彻底删除，直到总量回落到上限以内。大小为估算值。</div>
+            <div class="cleanup-help">超出后从最早删除的项目开始逐个彻底删除，直到总量回落到上限以内。大小为估算值。</div>
           </el-form-item>
           <el-form-item label="最短保留时间">
             <div class="cleanup-inline-row">
@@ -612,7 +612,7 @@ onMounted(refresh)
           </el-form-item>
           <el-form-item label="当前回收站">
             <div class="cleanup-stats-text">
-              {{ policyForm.recycled_config_count }} 个配置，约
+              {{ policyForm.recycled_config_count }} 个项目，约
               {{ formatBytes(policyForm.total_estimated_size_bytes) }}
             </div>
           </el-form-item>
@@ -621,7 +621,7 @@ onMounted(refresh)
           <el-button @click="previewCleanup" :loading="previewing">预览将删除</el-button>
         </div>
         <el-table v-if="previewItems.length" :data="previewItems" border max-height="240">
-          <el-table-column prop="original_config_name" label="配置名称" />
+          <el-table-column prop="original_config_name" label="项目名称" />
           <el-table-column prop="owner_username" label="所有者" width="100" />
           <el-table-column label="大小（估算）" width="120">
             <template #default="{ row }">{{ formatBytes(row.estimated_size_bytes) }}</template>

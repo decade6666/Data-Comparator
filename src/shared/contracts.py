@@ -14,6 +14,8 @@ class ParameterDocument(TypedDict, total=False):
     new_file_path: str
     old_file_upload_id: str
     new_file_upload_id: str
+    old_file_sheets: List[str]
+    new_file_sheets: List[str]
     output_directory: str
     anchor_row_num: int
     header_row_num: int

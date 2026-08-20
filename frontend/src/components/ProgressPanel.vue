@@ -8,7 +8,6 @@ const props = defineProps({
   status: { type: String, default: 'idle' },
   hasLogs: { type: Boolean, default: false },
   scanning: { type: Boolean, default: false },
-  scanProgress: { type: Number, default: 0 },
 })
 
 defineEmits(['start', 'stop', 'download-report', 'download-logs'])
@@ -18,11 +17,9 @@ const running = computed(() =>
 )
 const finished = computed(() => props.status === 'completed')
 
-const displayProgress = computed(() => {
-  if (props.scanning) return props.scanProgress
-  if (props.status === 'idle') return props.scanProgress
-  return props.progress
-})
+const displayProgress = computed(() =>
+  props.status === 'idle' ? 0 : props.progress
+)
 
 const statusText = computed(() => {
   if (props.scanning) return '扫描文件中…'
@@ -52,7 +49,7 @@ const barColor = computed(() => {
       <span>进度</span>
       <div class="panel-header-actions">
         <el-button
-          v-if="!running && !scanning"
+          v-if="!running"
           size="small"
           type="primary"
           plain
@@ -62,7 +59,7 @@ const barColor = computed(() => {
           @click="$emit('start')"
         />
         <el-button
-          v-else-if="running && !scanning"
+          v-else-if="running"
           size="small"
           type="danger"
           plain

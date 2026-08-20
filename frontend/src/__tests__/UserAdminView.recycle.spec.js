@@ -1,7 +1,7 @@
 /**
- * UserAdminView 回收站/配置操作/用户删除测试。
+ * UserAdminView 回收站/项目操作/用户删除测试。
  *
- * 覆盖：删除用户（软删提示 → DELETE /api/users/{id}）、配置列表批量复制
+ * 覆盖：删除用户（软删提示 → DELETE /api/users/{id}）、项目列表批量复制
  * （两步式：勾选 → 选目标用户 → POST /api/admin/configs/batch-copy）、
  * 回收站列表与彻底删除（两级确认 → DELETE /api/admin/recycle-bin/{id}）、
  * 清理策略加载/保存（PUT /api/admin/recycle-bin/cleanup-policy）。
@@ -224,7 +224,7 @@ function findDialog(wrapper, titlePart) {
     .find((d) => d.text().includes(titlePart))
 }
 
-describe('UserAdminView 回收站与配置操作', () => {
+describe('UserAdminView 回收站与项目操作', () => {
   let fetchMock
 
   beforeEach(() => {
@@ -239,15 +239,15 @@ describe('UserAdminView 回收站与配置操作', () => {
     vi.unstubAllGlobals()
   })
 
-  it('渲染用户列表：改名/重置密码/配置列表/删除按钮齐全，admin 行无配置列表/删除', async () => {
+  it('渲染用户列表：改名/重置密码/项目列表/删除按钮齐全，admin 行无项目列表/删除', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('admin')
     expect(wrapper.text()).toContain('管理员')
     expect(wrapper.text()).toContain('bob')
     expect(wrapper.findAll('[aria-label="改名"]')).toHaveLength(2)
     expect(wrapper.findAll('[aria-label="重置密码"]')).toHaveLength(2)
-    // 配置列表/删除仅普通用户行渲染（admin 行不存在）
-    expect(wrapper.findAll('[aria-label="配置列表"]')).toHaveLength(1)
+    // 项目列表/删除仅普通用户行渲染（admin 行不存在）
+    expect(wrapper.findAll('[aria-label="项目列表"]')).toHaveLength(1)
     expect(wrapper.findAll('[aria-label="删除"]')).toHaveLength(1)
     expect(wrapper.find('[aria-label="回收站"]').exists()).toBe(true)
   })
@@ -263,7 +263,7 @@ describe('UserAdminView 回收站与配置操作', () => {
     await flushPromises()
 
     expect(ElMessageBox.confirm).toHaveBeenCalledWith(
-      '确定删除用户 "bob" 吗？该用户的所有配置将进入回收站。',
+      '确定删除用户 "bob" 吗？该用户的所有项目将进入回收站。',
       '删除用户',
       expect.objectContaining({ type: 'warning' })
     )
@@ -274,7 +274,7 @@ describe('UserAdminView 回收站与配置操作', () => {
     expect(ElMessage.success).toHaveBeenCalledWith('用户已删除')
   })
 
-  it('配置列表：勾选配置 → 复制 → 选择目标用户 → POST /api/admin/configs/batch-copy', async () => {
+  it('项目列表：勾选项目 → 复制 → 选择目标用户 → POST /api/admin/configs/batch-copy', async () => {
     fetchMock = stubFetch({
       '/api/users': () => makeResponse(200, USERS),
       '/api/admin/users/2/configs': () =>
@@ -284,15 +284,15 @@ describe('UserAdminView 回收站与配置操作', () => {
     })
     const wrapper = await mountView()
 
-    await wrapper.find('[aria-label="配置列表"]').trigger('click')
+    await wrapper.find('[aria-label="项目列表"]').trigger('click')
     await flushPromises()
 
-    const configDialog = findDialog(wrapper, '配置列表')
+    const configDialog = findDialog(wrapper, '项目列表')
     expect(configDialog).toBeTruthy()
     expect(configDialog.text()).toContain('cfg1')
     expect(configDialog.text()).toContain('cfg2')
 
-    // 勾选第一个配置（el-table selection 列）
+    // 勾选第一个项目（el-table selection 列）
     const checkboxes = wrapper.findAll('.el-table-selection-checkbox')
     expect(checkboxes).toHaveLength(2)
     await checkboxes[0].setValue(true)
@@ -325,9 +325,9 @@ describe('UserAdminView 回收站与配置操作', () => {
         }),
       })
     )
-    expect(ElMessage.success).toHaveBeenCalledWith('成功复制 1 个配置')
+    expect(ElMessage.success).toHaveBeenCalledWith('成功复制 1 个项目')
     // 成功后关闭弹窗
-    expect(findDialog(wrapper, '配置列表')).toBeUndefined()
+    expect(findDialog(wrapper, '项目列表')).toBeUndefined()
   })
 
   it('回收站：渲染列表（大小格式化）并支持两级确认彻底删除', async () => {
@@ -341,7 +341,7 @@ describe('UserAdminView 回收站与配置操作', () => {
     await wrapper.find('[aria-label="回收站"]').trigger('click')
     await flushPromises()
 
-    const recycleDialog = findDialog(wrapper, '配置回收站')
+    const recycleDialog = findDialog(wrapper, '项目回收站')
     expect(recycleDialog).toBeTruthy()
     expect(recycleDialog.text()).toContain('cfg-recycled')
     expect(recycleDialog.text()).toContain('bob')
@@ -374,7 +374,7 @@ describe('UserAdminView 回收站与配置操作', () => {
     await wrapper.find('[aria-label="回收站"]').trigger('click')
     await flushPromises()
 
-    const recycleDialog = findDialog(wrapper, '配置回收站')
+    const recycleDialog = findDialog(wrapper, '项目回收站')
     const policyButton = recycleDialog
       .findAll('button')
       .find((b) => b.text() === '清理策略')
@@ -383,7 +383,7 @@ describe('UserAdminView 回收站与配置操作', () => {
 
     const policyDialog = findDialog(wrapper, '回收站清理策略')
     expect(policyDialog).toBeTruthy()
-    expect(policyDialog.text()).toContain('1 个配置')
+    expect(policyDialog.text()).toContain('1 个项目')
     expect(policyDialog.text()).toContain('2.0 KB')
 
     // 表单已填充：巡检间隔初始 60，保存按钮初始禁用

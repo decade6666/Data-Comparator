@@ -37,7 +37,7 @@ async function importTemplate(templateName) {
 function confirm() {
   const trimmedName = name.value.trim()
   if (!trimmedName) {
-    ElMessage.warning('配置名称不能为空')
+    ElMessage.warning('项目名称不能为空')
     return
   }
   resolveNewConfigDialog(trimmedName)
@@ -51,18 +51,18 @@ function cancel() {
 <template>
   <el-dialog
     :model-value="newConfigVisible"
-    title="新建配置"
+    title="新建项目"
     width="440px"
     append-to-body
     :close-on-click-modal="false"
     @update:model-value="(visible) => !visible && cancel()"
   >
     <el-form label-position="top" @submit.prevent="confirm">
-      <el-form-item label="配置名称">
+      <el-form-item label="项目名称">
         <el-input
           v-model="name"
           autofocus
-          placeholder="请输入新配置名称"
+          placeholder="请输入新项目名称"
           @keyup.enter="confirm"
         />
       </el-form-item>

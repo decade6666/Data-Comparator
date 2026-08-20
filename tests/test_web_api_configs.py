@@ -74,6 +74,34 @@ def test_export_and_import_config(auth_client) -> None:
     assert auth_client.get("/api/configs/导入配置").json() == MINIMAL_DOC
 
 
+def test_export_strips_file_and_sheet_fields(auth_client) -> None:
+    doc = {
+        **MINIMAL_DOC,
+        "old_file_path": "/data/old.xlsx",
+        "new_file_path": "/data/new.xlsx",
+        "old_file_upload_id": "upload-old-1",
+        "new_file_upload_id": "upload-new-1",
+        "old_file_sheets": ["旧表1"],
+        "new_file_sheets": ["新表1"],
+    }
+    auth_client.put("/api/configs/导出配置", json=doc)
+    exported = auth_client.get("/api/configs/导出配置/export")
+
+    assert exported.status_code == 200
+    body = exported.json()
+    for field in (
+        "old_file_path",
+        "new_file_path",
+        "old_file_upload_id",
+        "new_file_upload_id",
+        "old_file_sheets",
+        "new_file_sheets",
+    ):
+        assert field not in body
+    assert body["anchor_row_num"] == MINIMAL_DOC["anchor_row_num"]
+    assert body["common_cols"] == MINIMAL_DOC["common_cols"]
+
+
 def test_import_invalid_json(auth_client) -> None:
     response = auth_client.post(
         "/api/configs/import",

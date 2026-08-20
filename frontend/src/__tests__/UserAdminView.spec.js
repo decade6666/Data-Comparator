@@ -136,15 +136,15 @@ describe('UserAdminView 用户管理', () => {
     vi.unstubAllGlobals()
   })
 
-  it('渲染用户列表：显示管理员标签与普通用户，操作列含改名/重置密码/配置列表/删除', async () => {
+  it('渲染用户列表：显示管理员标签与普通用户，操作列含改名/重置密码/项目列表/删除', async () => {
     const wrapper = await mountView()
     expect(wrapper.text()).toContain('admin')
     expect(wrapper.text()).toContain('管理员')
     expect(wrapper.text()).toContain('bob')
-    // 改名/重置密码对每个用户都有；配置列表/删除仅普通用户可见（admin 行不渲染）
+    // 改名/重置密码对每个用户都有；项目列表/删除仅普通用户可见（admin 行不渲染）
     expect(wrapper.findAll('[aria-label="改名"]')).toHaveLength(2)
     expect(wrapper.findAll('[aria-label="重置密码"]')).toHaveLength(2)
-    expect(wrapper.findAll('[aria-label="配置列表"]')).toHaveLength(1)
+    expect(wrapper.findAll('[aria-label="项目列表"]')).toHaveLength(1)
     expect(wrapper.findAll('[aria-label="删除"]')).toHaveLength(1)
     expect(wrapper.find('[aria-label="回收站"]').exists()).toBe(true)
   })

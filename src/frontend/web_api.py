@@ -11,6 +11,7 @@ from urllib.parse import unquote
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
 from ..backend.application.background_jobs import (
@@ -484,7 +485,7 @@ def get_config(
 ) -> Dict[str, Any]:
     document = _repository_for(current_user.id).load_document(name)
     if document is None:
-        raise HTTPException(status_code=404, detail="配置不存在")
+        raise HTTPException(status_code=404, detail="项目不存在")
     return dict(document)
 
 
@@ -513,7 +514,7 @@ def delete_config(
     repository = _repository_for(current_user.id)
     document = repository.load_document(name)
     if document is None:
-        raise HTTPException(status_code=404, detail="配置不存在")
+        raise HTTPException(status_code=404, detail="项目不存在")
     try:
         RecycleBinService.recycle_config(
             session,
@@ -544,11 +545,21 @@ def copy_config(
         raise HTTPException(status_code=400, detail="不能覆盖内置模板")
     document = repository.load_document(name)
     if document is None:
-        raise HTTPException(status_code=404, detail="配置不存在")
+        raise HTTPException(status_code=404, detail="项目不存在")
     if repository.load_document(request.new_name) is not None:
-        raise HTTPException(status_code=409, detail="目标配置已存在")
+        raise HTTPException(status_code=409, detail="目标项目已存在")
     repository.save_document(request.new_name, document)
     return {"name": request.new_name, "copied": True}
+
+
+_EXPORT_STRIP_FIELDS = (
+    "old_file_path",
+    "new_file_path",
+    "old_file_upload_id",
+    "new_file_upload_id",
+    "old_file_sheets",
+    "new_file_sheets",
+)
 
 
 @app.get("/api/configs/{name}/export")
@@ -558,11 +569,20 @@ def export_config(
 ) -> FileResponse:
     document = _repository_for(current_user.id).load_document(name)
     if document is None:
-        raise HTTPException(status_code=404, detail="配置不存在")
+        raise HTTPException(status_code=404, detail="项目不存在")
+    stripped = {
+        key: value
+        for key, value in document.items()
+        if key not in _EXPORT_STRIP_FIELDS
+    }
+    tmp_path = _write_config_json_to_temp(
+        name, cast(ParameterDocument, stripped)
+    )
     return FileResponse(
-        _write_config_json_to_temp(name, document),
+        tmp_path,
         filename=f"{name}.json",
         media_type="application/json",
+        background=BackgroundTask(os.unlink, tmp_path),
     )
 
 
@@ -589,8 +609,8 @@ async def import_config(
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=400, detail="导入文件不是合法的 JSON") from exc
     if not isinstance(document, dict):
-        raise HTTPException(status_code=400, detail="导入的 JSON 必须是配置对象")
-    name = file.filename or "导入配置"
+        raise HTTPException(status_code=400, detail="导入的 JSON 必须是项目对象")
+    name = file.filename or "导入项目"
     if name.endswith(".json"):
         name = name[:-5]
     if name in BUILTIN_TEMPLATES:

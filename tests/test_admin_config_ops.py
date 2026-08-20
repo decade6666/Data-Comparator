@@ -195,7 +195,7 @@ def test_batch_move_all_fail_returns_400(auth_client) -> None:
         },
     )
     assert response.status_code == 400
-    assert "全部配置转移失败" in response.json()["detail"]
+    assert "全部项目转移失败" in response.json()["detail"]
 
 
 def test_batch_delete_goes_to_recycle_bin(auth_client) -> None:
