@@ -138,3 +138,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 用户隔离与认证 + 配置回收站（三期）
+
+**Date**: 2026-08-19
+**Task**: 用户隔离与认证 + 配置回收站（三期）
+**Branch**: `main`
+
+### Summary
+
+JWT 认证与按用户数据隔离；管理员用户管理视图（改名/硬删/批量配置操作）；配置回收站（软删/恢复/孤儿恢复/自动清理策略）复刻 CRF-Editor；182 后端测试 + 12 前端测试通过，浏览器 E2E 全链路验证
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `25267ef` | (see git log) |
+| `f50e3ad` | (see git log) |
+| `f633682` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
