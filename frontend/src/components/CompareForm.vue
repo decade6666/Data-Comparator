@@ -158,7 +158,7 @@ watch(
     <div class="panel-footer config-save-footer">
       <el-button size="small" @click="cancelSave">取消保存</el-button>
       <el-button size="small" type="primary" @click="saveParameters">
-        保存配置
+        保存项目
       </el-button>
     </div>
   </div>

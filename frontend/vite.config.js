@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         // 跟随 base：根路径代理 /api，子路径代理 /dc/api 并剥掉前缀
         [`${basePrefix}/api`]: {
-          target: 'http://127.0.0.1:8000',
+          target: 'http://127.0.0.1:8888',
           changeOrigin: true,
           ...(basePrefix ? { rewrite: (p) => p.slice(basePrefix.length) } : {}),
         },

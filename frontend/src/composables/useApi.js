@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_BASE_PATH || ''
+const BASE = (import.meta.env?.VITE_BASE_PATH) || ''
 const API_BASE = (BASE.endsWith('/') ? BASE : BASE + '/') + 'api'
 const TOKEN_KEY = 'dc_token'
 
@@ -83,6 +83,37 @@ async function postForm(path, formData) {
   return response.json()
 }
 
+function parseFilenameFromCD(header) {
+  if (!header) return null
+  const encoded = /filename\*=utf-8''([^;]+)/i.exec(header)
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1].trim())
+    } catch (_err) {
+      // 回退到明文 filename 解析
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header)
+  return plain ? plain[1].trim() : null
+}
+
+async function download(path, fallbackFilename = 'download') {
+  const response = await request('GET', path)
+  const blob = await response.blob()
+  const filename =
+    parseFilenameFromCD(response.headers.get('content-disposition')) ||
+    fallbackFilename
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 export const api = {
   apiUrl,
   get,
@@ -90,4 +121,5 @@ export const api = {
   put,
   del,
   postForm,
+  download,
 }

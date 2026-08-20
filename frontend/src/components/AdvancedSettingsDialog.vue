@@ -3,9 +3,10 @@ defineProps({
   modelValue: { type: Boolean, default: false },
   maxWorkers: { type: Number, default: 4 },
   isDark: { type: Boolean, default: false },
+  isAdmin: { type: Boolean, default: false },
 })
 
-defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark'])
+defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark', 'change-password', 'logout'])
 </script>
 
 <template>
@@ -17,7 +18,7 @@ defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark'])
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <el-form label-width="110px" label-position="left">
-      <el-form-item label="最大线程数">
+      <el-form-item v-if="!isAdmin" label="最大线程数">
         <el-input-number
           :model-value="maxWorkers"
           :min="1"
@@ -32,5 +33,17 @@ defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark'])
         />
       </el-form-item>
     </el-form>
+    <div class="settings-actions">
+      <el-button @click="$emit('change-password')">修改密码</el-button>
+      <el-button type="danger" @click="$emit('logout')">退出登录</el-button>
+    </div>
   </el-dialog>
 </template>
+
+<style scoped>
+.settings-actions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+</style>

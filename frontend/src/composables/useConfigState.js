@@ -5,7 +5,8 @@ import {
   emptyConfig,
   loadConfig,
   saveCurrentConfig,
-} from './useConfig'
+} from './useConfig.js'
+import { resetSheets, restoreSheetsFromConfig } from './useSheets.js'
 
 export const LAST_CONFIG_STORAGE_KEY = 'dc_last_config'
 
@@ -38,6 +39,7 @@ export const isDirty = computed(() => {
 export async function selectConfig(name) {
   await loadConfig(name)
   config.config_name = name
+  restoreSheetsFromConfig()
   currentName.value = name
   savedSnapshot.value = clone(buildParameters())
   rememberConfig(name)
@@ -45,7 +47,7 @@ export async function selectConfig(name) {
 
 export async function saveConfig(name = currentName.value) {
   const trimmedName = name.trim()
-  if (!trimmedName) throw new Error('配置名称不能为空')
+  if (!trimmedName) throw new Error('项目名称不能为空')
   config.config_name = trimmedName
   await saveCurrentConfig(trimmedName)
   rememberConfig(trimmedName)
@@ -75,6 +77,7 @@ export function clearSelectedConfig() {
   savedSnapshot.value = null
   localStorage.removeItem(lastConfigStorageKey())
   Object.assign(config, emptyConfig())
+  resetSheets()
 }
 
 export async function restoreLastConfig(availableNames) {

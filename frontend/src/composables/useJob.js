@@ -78,9 +78,12 @@ export function useJob() {
     outputName.value = ''
   }
 
-  function download() {
+  async function download() {
     if (!jobId.value) return
-    window.open(api.apiUrl(`/jobs/${jobId.value}/download`), '_blank')
+    await api.download(
+      `/jobs/${jobId.value}/download`,
+      outputName.value || '比对报告.xlsx'
+    )
   }
 
   // 将累积的日志行导出为 .txt 文件（纯前端 Blob 下载，无需后端端点）

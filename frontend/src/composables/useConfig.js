@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { api } from './useApi'
+import { api } from './useApi.js'
 
 export const DEFAULT_COLORS = {
   highlight_fill: '#FFE5E5',
@@ -16,6 +16,8 @@ export function emptyConfig() {
     output_directory: '',
     old_file_upload_id: null,
     new_file_upload_id: null,
+    old_file_sheets: [],
+    new_file_sheets: [],
     config_name: 'web',
     anchor_row_num: 1,
     header_row_num: 1,
@@ -45,6 +47,8 @@ const FILE_STATE_KEYS = new Set([
   'new_file_path',
   'old_file_upload_id',
   'new_file_upload_id',
+  'old_file_sheets',
+  'new_file_sheets',
 ])
 
 export function applyDocument(doc, options = {}) {
@@ -90,6 +94,8 @@ export function buildParameters() {
   if (config.new_file_upload_id) {
     document.new_file_upload_id = config.new_file_upload_id
   }
+  document.old_file_sheets = config.old_file_sheets
+  document.new_file_sheets = config.new_file_sheets
   return document
 }
 
@@ -98,7 +104,11 @@ export function buildParameters() {
 export function buildJobPayload() {
   const parameters = Object.fromEntries(
     Object.entries(buildParameters()).filter(
-      ([key]) => key !== 'old_file_path' && key !== 'new_file_path'
+      ([key]) =>
+        key !== 'old_file_path' &&
+        key !== 'new_file_path' &&
+        key !== 'old_file_sheets' &&
+        key !== 'new_file_sheets'
     )
   )
   return {
