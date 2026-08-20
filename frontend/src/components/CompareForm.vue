@@ -1,7 +1,9 @@
 <script setup>
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ref, watch } from 'vue'
 import { saveConfigWithPrompt, revertConfig } from '../composables/useConfigState'
+import { useSheets } from '../composables/useSheets'
+import { parameterDescription } from '../constants/parameterDescriptions'
 import PathSelector from './PathSelector.vue'
 import StructureRow from './StructureRow.vue'
 import ColorSettings from './ColorSettings.vue'
@@ -13,8 +15,41 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['config-changed', 'update:config'])
-
 const editing = ref(null)
+const { allSheets, scanFile, resetSheets } = useSheets()
+
+const CARDS = [
+  { key: 'common_cols', title: '排除字段', type: 'list', hint: '读取时直接丢弃的列' },
+  { key: 'sheet_scope', title: '比对表单', type: 'sheets', hint: '只需勾选要比对的扫描结果' },
+  { key: 'ignore_settings', title: '忽略字段', type: 'fields', hint: '单参数为全局字段，双参数为指定表单字段' },
+  { key: 'anchor_settings', title: '锚点', type: 'anchors', hint: '单参数为默认锚点，双参数为指定表单锚点' },
+  { key: 'sheet_order', title: '表单顺序', type: 'order', hint: '拖拽调整输出顺序' },
+]
+
+const selectedSheets = computed(() => {
+  if (!allSheets.value.length) return [...(props.config.sheet_order || [])]
+  const included = new Set(props.config.include_sheets || [])
+  if (included.size) return allSheets.value.filter((name) => included.has(name))
+  const excluded = new Set(props.config.exclude_sheets || [])
+  return allSheets.value.filter((name) => !excluded.has(name))
+})
+
+function cardValue(card) {
+  if (card.type === 'sheets') return selectedSheets.value
+  if (card.type === 'fields') {
+    return {
+      global: props.config.ignore_cols || [],
+      perSheet: props.config.sheet_ignore_cols || {},
+    }
+  }
+  if (card.type === 'anchors') {
+    return {
+      global: props.config.default_keys || [],
+      perSheet: props.config.sheet_key_map || {},
+    }
+  }
+  return props.config[card.key]
+}
 
 async function saveParameters() {
   try {
@@ -30,26 +65,40 @@ function cancelSave() {
   ElMessage.success('已撤销未保存的修改')
 }
 
-const CARDS = [
-  { key: 'common_cols', title: '排除字段', type: 'list', hint: '读取时直接丢弃的列' },
-  { key: 'exclude_sheets', title: '排除表单', type: 'sheetlist', hint: '在指定表单之后生效' },
-  { key: 'include_sheets', title: '指定表单', type: 'sheetlist', hint: '留空表示全部表单' },
-  { key: 'ignore_cols', title: '忽略比对字段', type: 'list', hint: '字段仍输出，差异不计入' },
-  { key: 'default_keys', title: '默认锚点', type: 'list', hint: '用于匹配新旧行的关键列' },
-  { key: 'sheet_key_map', title: '自定义锚点', type: 'dict', hint: '按表单替换默认锚点' },
-  { key: 'sheet_ignore_cols', title: '表单忽略字段', type: 'dict', hint: '按表单替换全局忽略字段' },
-  { key: 'sheet_order', title: '表单顺序', type: 'order', hint: '拖拽调整输出顺序' },
-]
+function patch(key, value) {
+  emit('update:config', { [key]: value })
+}
+
+function handleUpload({ uploadId }, kind) {
+  scanFile(uploadId, kind)
+}
+
+function handleClear(kind) {
+  resetSheets(kind)
+}
+
+function saveEditedValue(value) {
+  const card = editing.value
+  if (!card) return
+  if (card.type === 'sheets') {
+    patch('include_sheets', value.include)
+    patch('exclude_sheets', value.exclude)
+  } else if (card.type === 'fields') {
+    patch('ignore_cols', value.global)
+    patch('sheet_ignore_cols', value.perSheet)
+  } else if (card.type === 'anchors') {
+    patch('default_keys', value.global)
+    patch('sheet_key_map', value.perSheet)
+  } else {
+    patch(card.key, value)
+  }
+}
 
 watch(
   () => props.config,
   () => emit('config-changed'),
   { deep: true }
 )
-
-function patch(key, value) {
-  emit('update:config', { ...props.config, [key]: value })
-}
 </script>
 
 <template>
@@ -62,6 +111,8 @@ function patch(key, value) {
         :upload-id="config.old_file_upload_id"
         @update:model-value="patch('old_file_path', $event)"
         @update:upload-id="patch('old_file_upload_id', $event)"
+        @uploaded="handleUpload($event, 'old')"
+        @cleared="handleClear('old')"
       />
       <PathSelector
         label="新版本"
@@ -69,6 +120,8 @@ function patch(key, value) {
         :upload-id="config.new_file_upload_id"
         @update:model-value="patch('new_file_path', $event)"
         @update:upload-id="patch('new_file_upload_id', $event)"
+        @uploaded="handleUpload($event, 'new')"
+        @cleared="handleClear('new')"
       />
     </div>
   </div>
@@ -97,7 +150,8 @@ function patch(key, value) {
         :key="card.key"
         :title="card.title"
         :type="card.type"
-        :value="config[card.key]"
+        :value="cardValue(card)"
+        :description="parameterDescription(card.key)"
         @edit="editing = card"
       />
     </div>
@@ -111,9 +165,10 @@ function patch(key, value) {
 
   <ParameterEditDialog
     v-model="editing"
-    :value="editing ? config[editing.key] : []"
-    :old-file-upload-id="config.old_file_upload_id"
-    :new-file-upload-id="config.new_file_upload_id"
-    @save="(value) => { if (editing) { patch(editing.key, value); } }"
+    :value="editing ? cardValue(editing) : []"
+    :sheet-names="allSheets"
+    :selected-sheets="selectedSheets"
+    :exclude-sheets="config.exclude_sheets"
+    @save="saveEditedValue"
   />
 </template>

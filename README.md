@@ -60,6 +60,25 @@ cd frontend && npm run dev
 - 服务账号：`dataset-comparator`
 - Excel 文件和报告目录：`/data/dataset-comparator`
 - 服务端口：`8000`
+- 用户数据根目录：`/var/lib/dataset-comparator/data`（SQLite、配置、上传文件、结果均按用户隔离）
+
+认证密钥与首次启动管理员建议写入仅服务账号可读的 `/etc/dataset-comparator.env`：
+
+```bash
+sudo install -o dataset-comparator -g dataset-comparator -m 600 /dev/null \
+  /etc/dataset-comparator.env
+sudoedit /etc/dataset-comparator.env
+```
+
+至少配置以下变量（不要把真实值提交到仓库）：
+
+```text
+DATASET_COMPARATOR_SECRET_KEY=<随机长密钥>
+DATASET_COMPARATOR_ADMIN_USERNAME=<初始管理员用户名>
+DATASET_COMPARATOR_ADMIN_PASSWORD=<至少 8 位的初始密码>
+DATASET_COMPARATOR_DATA_DIR=/var/lib/dataset-comparator/data
+DATASET_COMPARATOR_MAX_CONCURRENT_JOBS=2
+```
 
 #### 1. 准备运行目录和 Python 环境
 
@@ -117,10 +136,10 @@ Group=dataset-comparator
 WorkingDirectory=/opt/dataset-comparator
 Environment="HOME=/var/lib/dataset-comparator"
 Environment="PATH=/opt/dataset-comparator/.venv/bin"
+EnvironmentFile=/etc/dataset-comparator.env
 Environment="DATASET_COMPARATOR_WEB_HOST=127.0.0.1"
 Environment="DATASET_COMPARATOR_WEB_PORT=8000"
 Environment="DATASET_COMPARATOR_STATIC_DIR=/opt/dataset-comparator/frontend/dist"
-Environment="DATASET_COMPARATOR_BROWSE_ROOTS=/data/dataset-comparator"
 ExecStart=/opt/dataset-comparator/.venv/bin/python -m src.main_web
 Restart=on-failure
 RestartSec=5
@@ -161,12 +180,12 @@ sudo systemctl stop dataset-comparator
 ```bash
 sudo -u dataset-comparator -H sh -c '
   cd /opt/dataset-comparator &&
+  set -a && . /etc/dataset-comparator.env && set +a &&
   nohup env \
     HOME=/var/lib/dataset-comparator \
     DATASET_COMPARATOR_WEB_HOST=127.0.0.1 \
     DATASET_COMPARATOR_WEB_PORT=8000 \
     DATASET_COMPARATOR_STATIC_DIR=/opt/dataset-comparator/frontend/dist \
-    DATASET_COMPARATOR_BROWSE_ROOTS=/data/dataset-comparator \
     .venv/bin/python -m src.main_web \
     >> /var/lib/dataset-comparator/logs/web.log 2>&1 &
   echo $! > /var/lib/dataset-comparator/dataset-comparator.pid
@@ -198,65 +217,65 @@ sudo kill "$(sudo cat /var/lib/dataset-comparator/dataset-comparator.pid)"
   curl http://127.0.0.1:8000/health
   ```
 
-- 同步触发比对：
+- 认证：
+  - `POST /api/auth/login`：用户名密码登录，返回 Bearer token。
+  - 除 `/health`、登录和静态资源外，其余 API 都需要 `Authorization: Bearer <token>`。
+  - `DATASET_COMPARATOR_SECRET_KEY` 缺失时服务启动失败；首次启动使用 `DATASET_COMPARATOR_ADMIN_USERNAME` / `DATASET_COMPARATOR_ADMIN_PASSWORD` 创建管理员。
+
+- 上传并异步比对：
   ```bash
-  curl -X POST http://127.0.0.1:8000/api/compare \
+  TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
     -H 'Content-Type: application/json' \
-    -d '{
-      "old_file_path": "/data/old.xlsx",
-      "new_file_path": "/data/new.xlsx",
-      "output_directory": "/data/output",
-      "config_name": "web",
-      "anchor_row_num": 1,
-      "header_row_num": 1,
-      "merge_deleted_data": true,
-      "common_cols": [],
-      "exclude_sheets": [],
-      "default_keys": [],
-      "sheet_key_map": {},
-      "include_sheets": [],
-      "ignore_cols": [],
-      "sheet_ignore_cols": {},
-      "sheet_order": [],
-      "colors": {
-        "highlight_fill": "#FFE5E5",
-        "missing_sheet_tab": "#DC143C",
-        "new_sheet_tab": "#00FF00"
-      }
-    }'
+    -d '{"username":"<管理员用户名>","password":"<管理员密码>"}' | jq -r .access_token)
+
+  OLD_ID=$(curl -s -X POST http://127.0.0.1:8000/api/upload \
+    -H "Authorization: Bearer $TOKEN" \
+    -F 'file=@/data/old.xlsx' | jq -r .upload_id)
+  NEW_ID=$(curl -s -X POST http://127.0.0.1:8000/api/upload \
+    -H "Authorization: Bearer $TOKEN" \
+    -F 'file=@/data/new.xlsx' | jq -r .upload_id)
+
+  curl -X POST http://127.0.0.1:8000/api/jobs \
+    -H "Authorization: Bearer $TOKEN" \
+    -H 'Content-Type: application/json' \
+    -d "{\"old_file_upload_id\":\"$OLD_ID\",\"new_file_upload_id\":\"$NEW_ID\"}"
   ```
 
-提示：首次运行会在用户数据目录创建临时与配置子目录（例如 `PyDataCompare/temp/configs`）。
+提示：首次运行会在 `DATASET_COMPARATOR_DATA_DIR`（默认用户数据目录）创建 SQLite、按用户隔离的配置/上传/结果目录。
 
 ### 异步任务 API（Web UI 使用）
 
 Web UI 基于异步任务接口实现进度显示与停止：
 
-- `POST /api/jobs`：提交比对任务（字段与 `/api/compare` 一致；也可传 `old_file_upload_id` / `new_file_upload_id` 走上传模式，输出目录缺省为临时目录），返回 `job_id`。同一时间只允许一个任务运行，冲突返回 409。
-- `GET /api/jobs/{job_id}?since=N`：轮询状态与新增日志，返回 `status` / `progress_percent` / `progress_message` / `log_lines` / `output_path`。
+- `POST /api/jobs`：提交比对任务（文件只接受 `old_file_upload_id` / `new_file_upload_id`，输出目录缺省为当前用户结果目录），返回 `job_id`。每用户同一时间至多一个运行中任务，冲突返回 409；不同用户可并发，全局并发上限由 `DATASET_COMPARATOR_MAX_CONCURRENT_JOBS`（默认 2）控制，超额任务排队等待。
+- `GET /api/jobs/{job_id}?since=N`：轮询状态与新增日志，返回 `status` / `progress_percent` / `progress_message` / `log_lines` / `output_path`。只能查询自己的任务，他人任务返回 404。
 - `POST /api/jobs/{job_id}/cancel`：请求停止任务（底层设置停止标志，领域层抛出 `InterruptedError` 后任务标记为 `cancelled`）。
 - `GET /api/jobs/{job_id}/download`：任务完成后下载比对报告。
-- `POST /api/upload`：上传 Excel 文件（`.xlsx`/`.xls`，默认上限 200MB，可用 `DATASET_COMPARATOR_MAX_UPLOAD_MB` 调整）。
-- `GET /api/browse?path=...`：浏览服务器目录（白名单由 `DATASET_COMPARATOR_BROWSE_ROOTS` 配置，默认用户主目录）。
-- `GET /api/sheets`：读取 Excel 文件的 Sheet 名称（`file_path` 或 `upload_id`）。
-- `GET/PUT/DELETE /api/configs/...`：配置预设的加载、保存、删除、复制、导入、导出；内置模板（CIMS/TM）受保护不可覆盖删除。
+- `POST /api/upload`：上传 Excel 文件（`.xlsx`/`.xls`，默认上限 200MB，可用 `DATASET_COMPARATOR_MAX_UPLOAD_MB` 调整），返回 `upload_id`，文件保存在当前用户的上传目录。
+- `GET /api/sheets?upload_id=...`：读取已上传 Excel 文件的 Sheet 名称（仅支持 `upload_id`；上传成功后由前端自动扫描）。
+- `GET/PUT/DELETE /api/configs/...`：配置预设的加载、保存、删除、复制、导入、导出；内置模板（CIMS/TM）为全局只读常量，受保护不可覆盖删除，也不落入用户配置目录。
+- 用户管理（仅管理员）：`GET/POST /api/users`、`PUT /api/users/{user_id}/password`、`PUT /api/users/{user_id}/status`。
 
 ## 比对配置说明
 
 | 参数 | 说明 |
 |---|---|
-| `include_sheets` | 指定表单：非空时只比对/输出列表内的表单；与 `exclude_sheets` 同时存在时，先按 include 过滤、再按 exclude 排除 |
-| `ignore_cols` | 忽略比对字段（全局）：字段照常输出，但不产生差异、不高亮、不影响行级标记、不计入汇总 |
-| `sheet_ignore_cols` | 按表单覆盖全局忽略字段：整体替换语义（不是追加合并）；未命中的表单回退到全局 `ignore_cols` |
-| `sheet_order` | 输出表单顺序：按指定顺序排列输出文件中的表单；优先级为 sheet_order > include_sheets > 源文件顺序 |
+| `include_sheets` | 比对表单（界面「比对表单」勾选项）：非空时只比对/输出列表内的表单；与 `exclude_sheets` 同时存在时，先按 include 过滤、再按 exclude 排除 |
+| `exclude_sheets` | 比对表单（界面未勾选项）：模板提供的默认排除表单在扫描后自动取消勾选并保留到此处；换文件后未扫描到的原排除项继续生效 |
+| `ignore_cols` | 忽略字段（全局，界面填「忽略字段」单参数行）：字段照常输出，但不产生差异、不高亮、不影响行级标记、不计入汇总 |
+| `sheet_ignore_cols` | 忽略字段（指定表单，界面填「忽略字段」表单+字段双参数行）：整体替换全局忽略字段（不是追加合并）；未命中的表单回退到全局 `ignore_cols` |
+| `default_keys` | 锚点（全局，界面填「锚点」单参数行）：默认主键列 |
+| `sheet_key_map` | 锚点（指定表单，界面填「锚点」表单+字段双参数行）：按表单指定主键列，未命中的表单回退到 `default_keys` |
+| `sheet_order` | 输出表单顺序（界面「表单顺序」拖拽列表，内容为勾选后的比对表单）：优先级为 sheet_order > include_sheets > 源文件顺序 |
 
 ## 目录结构（摘要）
-- `frontend/`：Vue 3 + Vite + Element Plus 浏览器 UI（设计令牌与暗色模式参考 CRF-Editor）
+- `frontend/`：Vue 3 + Vite + Element Plus 浏览器 UI（设计令牌与暗色模式参考 CRF-Editor，含登录与管理员用户管理）
 - `src/main_web.py`：Linux Web/API 程序入口
-- `src/frontend/`：FastAPI Web API 层（web_api.py，含任务/上传/浏览/配置端点与静态资源托管）
-- `src/backend/application/`：应用编排服务，如路径校验、输出路径生成与异步任务管理（job_manager.py）
+- `src/frontend/`：FastAPI Web API 层（web_api.py，含任务/上传/配置/静态资源端点；routers/ 含认证与用户管理路由）
+- `src/frontend/dependencies.py`：JWT 认证依赖（`get_current_user` / `require_admin`）
+- `src/backend/application/`：应用编排服务，如认证、用户管理、路径校验、输出路径生成与异步任务管理（job_manager.py）
 - `src/backend/domain/`：比对领域逻辑、Excel 读取/渲染、高亮与停止控制
-- `src/backend/infrastructure/`：配置、进度、临时目录、上传存储与路径安全校验等运行时适配
+- `src/backend/infrastructure/`：配置、进度、临时目录、上传存储、SQLite 数据库与路径安全校验等运行时适配
 - `src/shared/`：跨层契约与日志转发
 - `tests/`：pytest 测试资产
 

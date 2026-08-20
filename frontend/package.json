@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "lint": "eslint --ext .js,.vue src",
     "format": "prettier --write \"src/**/*.{js,vue}\""
   },
@@ -19,9 +20,12 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.2",
+    "@vue/test-utils": "^2.4.11",
     "eslint": "^8.57.0",
     "eslint-plugin-vue": "^9.26.0",
+    "happy-dom": "^20.11.6",
     "prettier": "^3.2.5",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^4.1.11"
   }
 }

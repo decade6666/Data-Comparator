@@ -71,7 +71,7 @@ async function removeConfig(name) {
     await deleteConfig(name)
     if (currentName.value === name) clearSelectedConfig()
     await refresh()
-    ElMessage.success('已删除')
+    ElMessage.success('已移至回收站')
   } catch (err) {
     if (err !== 'cancel') ElMessage.error(err.message)
   }

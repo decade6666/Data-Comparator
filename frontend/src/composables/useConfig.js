@@ -96,10 +96,13 @@ export function buildParameters() {
 // 提交任务用：附带会话内上传文件 id；路径强制留空，
 // 避免后端 _resolve_job_input 因「路径 + 上传 id 同时提供」返回 400
 export function buildJobPayload() {
+  const parameters = Object.fromEntries(
+    Object.entries(buildParameters()).filter(
+      ([key]) => key !== 'old_file_path' && key !== 'new_file_path'
+    )
+  )
   return {
-    ...buildParameters(),
-    old_file_path: '',
-    new_file_path: '',
+    ...parameters,
     old_file_upload_id: config.old_file_upload_id,
     new_file_upload_id: config.new_file_upload_id,
   }

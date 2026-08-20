@@ -1,22 +1,21 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Refresh, Plus, Delete, Close, Check } from '@element-plus/icons-vue'
-import { api } from '../composables/useApi'
+import { ref } from 'vue'
+import { Plus, Delete, Close, Check, Rank } from '@element-plus/icons-vue'
+import Draggable from 'vuedraggable'
 
 const props = defineProps({
-  modelValue: { type: Object, default: null }, // { key, title, type, hint }
+  modelValue: { type: Object, default: null },
   value: { type: [Array, Object], default: () => [] },
-  oldFileUploadId: { type: String, default: null },
-  newFileUploadId: { type: String, default: null },
+  sheetNames: { type: Array, default: () => [] },
+  selectedSheets: { type: Array, default: () => [] },
+  excludeSheets: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
-
 const text = ref('')
-const sheetNames = ref([])
-const loadingSheets = ref(false)
-const dictRows = ref([])
+const checkedSheets = ref([])
+const orderItems = ref([])
+const rows = ref([])
 
 function textToValue() {
   return text.value
@@ -26,91 +25,103 @@ function textToValue() {
 }
 
 function valueToText(value) {
-  if (Array.isArray(value)) return value.join('\n')
-  return ''
+  return Array.isArray(value) ? value.join('\n') : ''
 }
 
-const isDict = computed(() => props.modelValue && props.modelValue.type === 'dict')
-const isOrder = computed(() => props.modelValue && props.modelValue.type === 'order')
-
-function toDictRows(value) {
-  const rows = []
-  for (const [sheet, items] of Object.entries(value || {})) {
-    rows.push({ sheet, items: Array.isArray(items) ? items.join(', ') : String(items) })
-  }
-  return rows
-}
-
-function dictRowsToValue() {
-  const result = {}
-  for (const row of dictRows.value) {
-    const key = row.sheet.trim()
-    if (!key) continue
-    result[key] = row.items
-      .split(/[,，]/)
-      .map((item) => item.trim())
-      .filter(Boolean)
+function toRows(value) {
+  const result = []
+  const global = Array.isArray(value?.global) ? value.global : []
+  if (global.length) result.push({ sheet: '', items: global.join(', ') })
+  for (const [sheet, items] of Object.entries(value?.perSheet || {})) {
+    result.push({ sheet, items: Array.isArray(items) ? items.join(', ') : String(items) })
   }
   return result
 }
 
+function rowsToValue() {
+  const global = []
+  const perSheet = {}
+  for (const row of rows.value) {
+    const items = row.items
+      .split(/[,，]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+    if (!items.length) continue
+    const sheet = row.sheet.trim()
+    if (sheet) perSheet[sheet] = items
+    else global.push(...items)
+  }
+  return { global: [...new Set(global)], perSheet }
+}
+
 function openDialog() {
-  sheetNames.value = []
   const model = props.modelValue
   if (!model) return
-  if (model.type === 'list' || model.type === 'sheetlist') {
+  if (model.type === 'list') {
     text.value = valueToText(props.value)
-  } else if (model.type === 'dict') {
-    dictRows.value = toDictRows(props.value)
+  } else if (model.type === 'sheets') {
+    checkedSheets.value = props.sheetNames.length
+      ? [...props.selectedSheets]
+      : [...(Array.isArray(props.value) ? props.value : [])]
   } else if (model.type === 'order') {
-    dictRows.value = toDictRows(props.value)
+    const available = props.selectedSheets.length
+      ? props.selectedSheets
+      : Array.isArray(props.value)
+        ? props.value
+        : []
+    const existing = Array.isArray(props.value) ? props.value : []
+    orderItems.value = [
+      ...existing.filter((name) => available.includes(name)),
+      ...available.filter((name) => !existing.includes(name)),
+    ].map((name) => ({ name }))
+  } else if (model.type === 'fields' || model.type === 'anchors') {
+    rows.value = toRows(props.value)
   }
 }
 
-async function discoverSheets() {
-  loadingSheets.value = true
-  try {
-    const uploadId = props.oldFileUploadId || props.newFileUploadId
-    if (!uploadId) {
-      ElMessage.warning('请先上传旧版本或新版本文件')
-      return
-    }
-    const body = await api.get(`/sheets?upload_id=${uploadId}`)
-    sheetNames.value = body.sheets
-    ElMessage.success(`发现 ${body.sheets.length} 个表单`)
-  } catch (err) {
-    ElMessage.error(err.message)
-  } finally {
-    loadingSheets.value = false
-  }
+function toggleSheet(name, checked) {
+  const next = new Set(checkedSheets.value)
+  if (checked) next.add(name)
+  else next.delete(name)
+  checkedSheets.value = [...next]
 }
 
-function toggleSheet(name) {
-  const list = textToValue()
-  const index = list.indexOf(name)
-  if (index >= 0) list.splice(index, 1)
-  else list.push(name)
-  text.value = list.join('\n')
+function addRow() {
+  rows.value = [...rows.value, { sheet: '', items: '' }]
 }
 
-function addDictRow() {
-  dictRows.value.push({ sheet: '', items: '' })
-}
-
-function removeDictRow(index) {
-  dictRows.value.splice(index, 1)
+function removeRow(index) {
+  rows.value = rows.value.filter((_row, rowIndex) => rowIndex !== index)
 }
 
 function save() {
   const model = props.modelValue
   if (!model) return
   let value
-  if (model.type === 'list' || model.type === 'sheetlist') {
+  if (model.type === 'list') {
     value = textToValue()
-  } else if (model.type === 'dict') {
-    value = dictRowsToValue()
+  } else if (model.type === 'sheets') {
+    if (!props.sheetNames.length) {
+      value = { include: [...checkedSheets.value], exclude: [...props.excludeSheets] }
+    } else {
+      const selected = new Set(checkedSheets.value)
+      const unscannedExcluded = props.excludeSheets.filter(
+        (name) => !props.sheetNames.includes(name)
+      )
+      value = {
+        include: [...checkedSheets.value],
+        exclude: [
+          ...new Set([
+            ...props.sheetNames.filter((name) => !selected.has(name)),
+            ...unscannedExcluded,
+          ]),
+        ],
+      }
+    }
+  } else if (model.type === 'order') {
+    value = orderItems.value.map((item) => item.name)
   } else {
-    value = textToValue()
+    value = rowsToValue()
   }
   emit('save', value)
   emit('update:modelValue', null)
@@ -123,49 +134,52 @@ function save() {
     :title="modelValue ? '编辑：' + modelValue.title : ''"
     width="560px"
     append-to-body
-    @update:model-value="(v) => emit('update:modelValue', v ? modelValue : null)"
+    @update:model-value="(value) => emit('update:modelValue', value ? modelValue : null)"
     @open="openDialog"
   >
     <div v-if="modelValue" class="edit-body">
-      <div v-if="modelValue.type === 'sheetlist'" class="discover-row">
-        <el-button
-          size="small"
-          :icon="Refresh"
-          :loading="loadingSheets"
-          title="扫描上传文件"
-          aria-label="扫描上传文件"
-          @click="discoverSheets"
-        />
+      <template v-if="modelValue.type === 'sheets'">
         <div v-if="sheetNames.length" class="sheet-checkboxes">
           <el-checkbox
             v-for="name in sheetNames"
             :key="name"
-            :model-value="textToValue().includes(name)"
-            @update:model-value="toggleSheet(name)"
+            :model-value="checkedSheets.includes(name)"
+            @update:model-value="toggleSheet(name, $event)"
           >
             {{ name }}
           </el-checkbox>
         </div>
-      </div>
+        <div v-else class="edit-empty">请先上传旧版本或新版本文件，系统会自动扫描表单。</div>
+        <div class="edit-hint">{{ modelValue.hint }}</div>
+      </template>
 
-      <template v-if="modelValue.type === 'dict'">
+      <template v-else-if="modelValue.type === 'order'">
+        <div v-if="orderItems.length" class="order-list">
+          <Draggable v-model="orderItems" item-key="name" handle=".drag-handle">
+            <template #item="{ element }">
+              <div class="order-row">
+                <el-icon class="drag-handle" :size="16"><Rank /></el-icon>
+                <span>{{ element.name }}</span>
+              </div>
+            </template>
+          </Draggable>
+        </div>
+        <div v-else class="edit-empty">请先上传文件并选择需要比对的表单。</div>
+        <div class="edit-hint">{{ modelValue.hint }}</div>
+      </template>
+
+      <template v-else-if="modelValue.type === 'fields' || modelValue.type === 'anchors'">
         <div class="dict-toolbar">
-          <el-button
-            size="small"
-            :icon="Plus"
-            title="添加行"
-            aria-label="添加行"
-            @click="addDictRow"
-          />
+          <el-button size="small" :icon="Plus" title="添加行" aria-label="添加行" @click="addRow" />
         </div>
         <div class="dict-table">
           <div class="dict-row dict-header">
-            <span>表单名称</span>
-            <span>字段（逗号分隔）</span>
+            <span>表单（可选）</span>
+            <span>参数（逗号分隔）</span>
             <span></span>
           </div>
-          <div v-for="(row, index) in dictRows" :key="index" class="dict-row">
-            <el-input v-model="row.sheet" size="small" placeholder="Sheet 名称" />
+          <div v-for="(row, index) in rows" :key="index" class="dict-row">
+            <el-input v-model="row.sheet" size="small" placeholder="留空表示全局" />
             <el-input v-model="row.items" size="small" placeholder="字段1, 字段2" />
             <el-button
               size="small"
@@ -174,7 +188,7 @@ function save() {
               :icon="Delete"
               title="删除此行"
               aria-label="删除此行"
-              @click="removeDictRow(index)"
+              @click="removeRow(index)"
             />
           </div>
         </div>
@@ -182,30 +196,14 @@ function save() {
       </template>
 
       <template v-else>
-        <el-input
-          v-model="text"
-          type="textarea"
-          :rows="10"
-          placeholder="每行一个值"
-        />
+        <el-input v-model="text" type="textarea" :rows="10" placeholder="每行一个值" />
         <div class="edit-hint">{{ modelValue.hint }}</div>
       </template>
     </div>
 
     <template #footer>
-      <el-button
-        :icon="Close"
-        title="取消"
-        aria-label="取消"
-        @click="emit('update:modelValue', null)"
-      />
-      <el-button
-        type="primary"
-        :icon="Check"
-        title="确定"
-        aria-label="确定"
-        @click="save"
-      />
+      <el-button :icon="Close" title="取消" aria-label="取消" @click="emit('update:modelValue', null)" />
+      <el-button type="primary" :icon="Check" title="确定" aria-label="确定" @click="save" />
     </template>
   </el-dialog>
 </template>
@@ -215,12 +213,6 @@ function save() {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.discover-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .sheet-checkboxes {
@@ -259,6 +251,31 @@ function save() {
   font-weight: 600;
 }
 
+.order-list {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.order-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.order-row:last-child {
+  border-bottom: none;
+}
+
+.drag-handle {
+  cursor: grab;
+  color: var(--color-text-muted);
+}
+
+.edit-empty,
 .edit-hint {
   color: var(--color-text-muted);
   font-size: var(--font-xs);
