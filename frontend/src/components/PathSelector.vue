@@ -3,13 +3,13 @@ import { ElMessage } from 'element-plus'
 import { UploadFilled, Close } from '@element-plus/icons-vue'
 import { api } from '../composables/useApi'
 
-const props = defineProps({
+defineProps({
   label: { type: String, required: true },
   modelValue: { type: String, default: '' },
   uploadId: { type: String, default: null },
 })
 
-const emit = defineEmits(['update:modelValue', 'update:uploadId', 'uploaded'])
+const emit = defineEmits(['update:modelValue', 'update:uploadId', 'uploaded', 'cleared'])
 
 async function handleUpload(file) {
   const formData = new FormData()
@@ -29,6 +29,7 @@ async function handleUpload(file) {
 function clear() {
   emit('update:modelValue', '')
   emit('update:uploadId', null)
+  emit('cleared')
 }
 </script>
 

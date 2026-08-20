@@ -4,6 +4,7 @@ from typing import Callable, Dict, List, Optional, cast
 
 from ...shared.contracts import LogFunc, ParameterDocument
 from ...shared.log_utils import log
+from .parameter_templates import BUILTIN_TEMPLATES
 
 CONFIGS_SUBDIR = "configs"
 
@@ -34,6 +35,8 @@ class JsonParameterRepository:
         log(f"配置目录已确保存在: {configs_dir}", self._log_func)
 
     def load_document(self, config_name: str) -> Optional[ParameterDocument]:
+        if config_name in BUILTIN_TEMPLATES:
+            return cast(ParameterDocument, dict(BUILTIN_TEMPLATES[config_name]))
         config_path = self.get_config_path(config_name)
         if not os.path.exists(config_path):
             return None
@@ -54,6 +57,7 @@ class JsonParameterRepository:
         return sorted(configs)
 
     def save_document(self, config_name: str, document: ParameterDocument) -> None:
+        self.ensure_config_directory()
         config_path = self.get_config_path(config_name)
         with open(config_path, "w", encoding="utf-8") as file:
             json.dump(document, file, ensure_ascii=False, indent=4)
@@ -66,10 +70,6 @@ class JsonParameterRepository:
         return True
 
     def ensure_builtin_templates(self, templates: Dict[str, ParameterDocument]) -> None:
+        # 内置模板为全局只读常量，不写入用户配置目录；此调用仅做兼容占位。
+        del templates
         self.ensure_config_directory()
-        for name, params in templates.items():
-            config_path = self.get_config_path(name)
-            if os.path.exists(config_path):
-                continue
-            self.save_document(name, params)
-            log(f"已创建内置模板: {name}", self._log_func)

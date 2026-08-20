@@ -8,6 +8,11 @@ import {
 } from './useConfig'
 
 export const LAST_CONFIG_STORAGE_KEY = 'dc_last_config'
+
+function lastConfigStorageKey() {
+  const username = localStorage.getItem('dc_username') || 'anonymous'
+  return `${LAST_CONFIG_STORAGE_KEY}:${username}`
+}
 export const currentName = ref('')
 export const savedSnapshot = ref(null)
 export const builtinTemplates = ref([])
@@ -22,7 +27,7 @@ function clone(value) {
 
 function rememberConfig(name) {
   currentName.value = name
-  localStorage.setItem(LAST_CONFIG_STORAGE_KEY, name)
+  localStorage.setItem(lastConfigStorageKey(), name)
 }
 
 export const isDirty = computed(() => {
@@ -68,12 +73,12 @@ export function revertConfig() {
 export function clearSelectedConfig() {
   currentName.value = ''
   savedSnapshot.value = null
-  localStorage.removeItem(LAST_CONFIG_STORAGE_KEY)
+  localStorage.removeItem(lastConfigStorageKey())
   Object.assign(config, emptyConfig())
 }
 
 export async function restoreLastConfig(availableNames) {
-  const name = localStorage.getItem(LAST_CONFIG_STORAGE_KEY)
+  const name = localStorage.getItem(lastConfigStorageKey())
   if (!name || !availableNames.includes(name)) {
     if (name) localStorage.removeItem(LAST_CONFIG_STORAGE_KEY)
     return false

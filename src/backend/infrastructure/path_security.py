@@ -4,8 +4,7 @@
 - ``is_safe_path``：解析后路径必须位于允许目录内（``os.path.commonpath`` 包含性校验）。
 - ``validate_asset_raw_path``：拼接前先拒绝绝对路径、点段、反斜杠与 URL 编码绕过。
 
-这两个函数是所有"按用户路径读取文件系统"接口（目录浏览、静态资源服务）
-的统一安全边界，新增此类接口必须复用。
+这两个函数是静态资源服务的统一安全边界，新增此类接口必须复用。
 """
 
 import os
@@ -26,9 +25,7 @@ def is_safe_path(path: str, allowed_dirs: List[str]) -> Tuple[bool, str]:
         for allowed_dir in allowed_dirs:
             allowed_real = Path(allowed_dir).resolve()
             try:
-                common = os.path.commonpath(
-                    [str(real_path), str(allowed_real)]
-                )
+                common = os.path.commonpath([str(real_path), str(allowed_real)])
                 if common == str(allowed_real):
                     return True, ""
             except (ValueError, OSError):
@@ -68,11 +65,3 @@ def validate_asset_raw_path(filepath: str) -> Tuple[bool, str]:
         if any(part in ("", ".", "..") for part in parts):
             return False, "资源路径不合法"
     return True, ""
-
-
-def get_browse_roots() -> List[str]:
-    """读取目录浏览白名单；未配置时回退到用户主目录。"""
-    raw = os.environ.get("DATASET_COMPARATOR_BROWSE_ROOTS", "").strip()
-    if not raw:
-        return [str(Path.home())]
-    return [item.strip() for item in raw.split(",") if item.strip()]

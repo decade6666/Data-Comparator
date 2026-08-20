@@ -45,9 +45,7 @@ class UploadStore:
         now: Callable[[], datetime.datetime] = datetime.datetime.now,
         config_dir_getter: Optional[Callable[[], str]] = None,
     ) -> None:
-        self._base_dir = base_dir or os.path.join(
-            get_app_temp_dir(), "uploads"
-        )
+        self._base_dir = base_dir or os.path.join(get_app_temp_dir(), "uploads")
         self._max_age_hours = max_age_hours
         self._now = now
         self._config_dir_getter = config_dir_getter
@@ -80,16 +78,12 @@ class UploadStore:
             self._records = restored
 
     @staticmethod
-    def _record_from_json(
-        upload_id: str, raw_record: object
-    ) -> Optional[UploadRecord]:
+    def _record_from_json(upload_id: str, raw_record: object) -> Optional[UploadRecord]:
         if not isinstance(raw_record, dict):
             return None
         try:
             record_id = str(raw_record.get("upload_id", upload_id))
-            created_at = datetime.datetime.fromisoformat(
-                str(raw_record["created_at"])
-            )
+            created_at = datetime.datetime.fromisoformat(str(raw_record["created_at"]))
             return UploadRecord(
                 upload_id=record_id,
                 file_path=str(raw_record["file_path"]),
@@ -179,9 +173,7 @@ class UploadStore:
             )
         upload_id = uuid.uuid4().hex[:16]
         safe_name = os.path.basename(original_name)
-        target_path = os.path.join(
-            self._base_dir, "{}_{}".format(upload_id, safe_name)
-        )
+        target_path = os.path.join(self._base_dir, "{}_{}".format(upload_id, safe_name))
         os.makedirs(self._base_dir, exist_ok=True)
         total = 0
         with open(target_path, "wb") as target:
@@ -197,7 +189,9 @@ class UploadStore:
                     except OSError:
                         pass
                     raise UploadTooLargeError(
-                        "文件大小超过限制（最大 {}MB）".format(max_bytes // (1024 * 1024))
+                        "文件大小超过限制（最大 {}MB）".format(
+                            max_bytes // (1024 * 1024)
+                        )
                     )
                 target.write(chunk)
         record = UploadRecord(

@@ -4,7 +4,6 @@ import json
 
 from src.backend.infrastructure.upload_store import UploadStore
 
-
 CURRENT_TIME = datetime.datetime(2026, 8, 18, 12, 0, 0)
 
 

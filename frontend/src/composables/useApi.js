@@ -1,8 +1,15 @@
 const BASE = import.meta.env.VITE_BASE_PATH || ''
 const API_BASE = (BASE.endsWith('/') ? BASE : BASE + '/') + 'api'
+const TOKEN_KEY = 'dc_token'
 
 function apiUrl(path) {
   return API_BASE + path
+}
+
+function authHeaders(headers = {}) {
+  const token = localStorage.getItem(TOKEN_KEY)
+  if (!token) return headers
+  return { ...headers, Authorization: `Bearer ${token}` }
 }
 
 async function request(method, path, options = {}) {
@@ -10,13 +17,21 @@ async function request(method, path, options = {}) {
   try {
     response = await fetch(apiUrl(path), {
       method,
-      headers: options.headers,
+      headers: authHeaders(options.headers),
       body: options.body,
     })
   } catch (err) {
     throw new Error('无法连接服务器: ' + err.message)
   }
+
+  const refreshedToken = response.headers.get('X-Refreshed-Token')
+  if (refreshedToken) localStorage.setItem(TOKEN_KEY, refreshedToken)
+
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_KEY)
+      window.dispatchEvent(new CustomEvent('dc-auth-expired'))
+    }
     let detail = '请求失败 (' + response.status + ')'
     try {
       const data = await response.json()
@@ -44,6 +59,7 @@ async function post(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (response.status === 204) return null
   return response.json()
 }
 
@@ -52,11 +68,13 @@ async function put(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (response.status === 204) return null
   return response.json()
 }
 
 async function del(path) {
   const response = await request('DELETE', path)
+  if (response.status === 204) return null
   return response.json()
 }
 

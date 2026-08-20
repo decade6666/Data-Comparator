@@ -14,6 +14,7 @@ def read_single_sheet_from_excel(
     header_row_num: int,
     log_func,
     cols_to_drop: Optional[List[str]] = None,
+    stop_flag=None,
 ):
     """
     在一个独立的线程中，读取Excel文件中指定Sheet的数据，并处理SASFieldLabel和SASFieldName。
@@ -25,6 +26,7 @@ def read_single_sheet_from_excel(
         header_row_num (int): 生成文件表头所在行的行号（1-based）。
         log_func (callable): 日志函数。
         cols_to_drop (list, optional): 在读取后需要删除的列名列表。
+        stop_flag (threading.Event, optional): 用户停止标志。
     Returns:
         pd.DataFrame: 读取到的数据DataFrame，包含SAS元数据作为attrs。
             如果读取失败或Sheet不存在，则返回None。
@@ -67,7 +69,7 @@ def read_single_sheet_from_excel(
             ws.iter_rows(min_row=1, max_row=header_rows_to_read, values_only=True)
         ):  # 从第1行开始读取到指定表头行
             if r_idx % 50 == 0:
-                check_stop_frequently(log_func)
+                check_stop_frequently(log_func, stop_flag)
             header_values_list.append(
                 [_normalize_value(value) for value in row]
             )  # 提取单元格值
@@ -112,7 +114,7 @@ def read_single_sheet_from_excel(
             start=header_rows_to_read + 1,
         ):
             if (row_idx_absolute - (header_rows_to_read + 1)) % 100 == 0:
-                check_stop_frequently(log_func)
+                check_stop_frequently(log_func, stop_flag)
             row_values = [
                 _normalize_value(value) for value in row
             ]  # 获取当前行的所有单元格值

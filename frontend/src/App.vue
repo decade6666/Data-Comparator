@@ -1,14 +1,19 @@
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Moon, Sunny, Setting, QuestionFilled } from '@element-plus/icons-vue'
+import { Moon, Sunny, Setting, QuestionFilled, Lock, SwitchButton } from '@element-plus/icons-vue'
 import { useTheme } from './composables/useTheme'
 import { useSidebarResize } from './composables/useSidebarResize'
 import { useJob } from './composables/useJob'
 import { config, buildJobPayload } from './composables/useConfig'
 import { autoSaveBeforeStart } from './composables/useConfigState'
+import { useAuth } from './composables/useAuth'
+import { useSheets } from './composables/useSheets'
+import { PARAMETER_DESCRIPTIONS } from './constants/parameterDescriptions'
 import AdvancedSettingsDialog from './components/AdvancedSettingsDialog.vue'
 import NewConfigDialog from './components/NewConfigDialog.vue'
+import UserAdminView from './components/UserAdminView.vue'
+import LoginView from './components/LoginView.vue'
 import ProgressPanel from './components/ProgressPanel.vue'
 import ConfigSidebar from './components/ConfigSidebar.vue'
 import CompareForm from './components/CompareForm.vue'
@@ -16,9 +21,34 @@ import CompareForm from './components/CompareForm.vue'
 const { isDark, toggleTheme } = useTheme()
 const { sidebarWidth, resizerStyle, startResize } = useSidebarResize()
 const job = useJob()
+const auth = useAuth()
+// 嵌套在对象里的 computed ref 在模板中不会自动解包（_unref(auth).isAuthenticated
+// 拿到的是 ref 对象本身、恒为真），必须解构成顶层绑定后再用于模板。
+const { isAuthenticated, isAdmin } = auth
+const { scanning, scanProgress, resetSheets } = useSheets()
+const parameterHelp = [
+  ['排除字段', PARAMETER_DESCRIPTIONS.common_cols],
+  ['比对表单', PARAMETER_DESCRIPTIONS.sheet_scope],
+  ['忽略字段', PARAMETER_DESCRIPTIONS.ignore_settings],
+  ['锚点', PARAMETER_DESCRIPTIONS.anchor_settings],
+  ['表单顺序', PARAMETER_DESCRIPTIONS.sheet_order],
+]
 
 const helpVisible = ref(false)
 const settingsVisible = ref(false)
+const passwordVisible = ref(false)
+const passwordForm = ref({ current_password: '', new_password: '' })
+const authReady = ref(false)
+
+onMounted(async () => {
+  try {
+    await auth.loadCurrentUser()
+  } catch (_err) {
+    // 登录页展示认证失败，不需要额外提示
+  } finally {
+    authReady.value = true
+  }
+})
 
 async function startCompare() {
   if (!config.old_file_upload_id || !config.new_file_upload_id) {
@@ -53,10 +83,70 @@ function updateConfig(patch) {
 function applyMaxWorkers(value) {
   config.max_workers = value
 }
+
+async function changePassword() {
+  try {
+    await auth.changePassword(
+      passwordForm.value.current_password,
+      passwordForm.value.new_password
+    )
+    passwordVisible.value = false
+    passwordForm.value = { current_password: '', new_password: '' }
+    ElMessage.success('密码已修改，请重新登录')
+  } catch (err) {
+    ElMessage.error(err.message)
+  }
+}
+
+function logout() {
+  auth.logout()
+  resetSheets()
+  job.reset()
+}
 </script>
 
 <template>
-  <header class="app-header">
+  <LoginView v-if="authReady && !isAuthenticated" @logged-in="auth.loadCurrentUser" />
+  <template v-else-if="authReady && isAuthenticated">
+    <template v-if="isAdmin">
+      <header class="app-header">
+        <h1>数据集比对工具</h1>
+        <div class="header-actions">
+          <button
+            class="icon-btn"
+            title="切换深色模式"
+            aria-label="切换深色模式"
+            @click="toggleTheme"
+          >
+            <el-icon :size="16">
+              <Sunny v-if="isDark" />
+              <Moon v-else />
+            </el-icon>
+          </button>
+          <button
+            class="icon-btn"
+            title="修改密码"
+            aria-label="修改密码"
+            @click="passwordVisible = true"
+          >
+            <el-icon :size="16"><Lock /></el-icon>
+          </button>
+          <button
+            class="icon-btn"
+            title="退出登录"
+            aria-label="退出登录"
+            @click="logout"
+          >
+            <el-icon :size="16"><SwitchButton /></el-icon>
+          </button>
+        </div>
+      </header>
+      <div class="app-admin">
+        <UserAdminView />
+      </div>
+    </template>
+    <template v-else>
+    <header class="app-header">
     <h1>数据集比对工具</h1>
     <div class="header-actions">
       <button
@@ -86,6 +176,22 @@ function applyMaxWorkers(value) {
       >
         <el-icon :size="16"><Setting /></el-icon>
       </button>
+      <button
+        class="icon-btn"
+        title="修改密码"
+        aria-label="修改密码"
+        @click="passwordVisible = true"
+      >
+        <el-icon :size="16"><Lock /></el-icon>
+      </button>
+      <button
+        class="icon-btn"
+        title="退出登录"
+        aria-label="退出登录"
+        @click="logout"
+      >
+        <el-icon :size="16"><SwitchButton /></el-icon>
+      </button>
     </div>
   </header>
 
@@ -100,6 +206,8 @@ function applyMaxWorkers(value) {
         :message="job.progressMessage.value"
         :status="job.status.value"
         :has-logs="job.logLines.value.length > 0"
+        :scanning="scanning"
+        :scan-progress="scanProgress"
         @start="startCompare"
         @stop="stopCompare"
         @download-logs="job.downloadLogs()"
@@ -154,13 +262,9 @@ function applyMaxWorkers(value) {
         <li><b>锚点行号：</b>锚点及删除列数据所在行的行号。</li>
         <li><b>表头行号：</b>输出文件表头所在行的行号。</li>
         <li><b>保留删除数据：</b>开启时保留新版本中不存在的表单、行和列；关闭时舍弃这些删除数据。</li>
-        <li><b>排除字段：</b>读取时直接丢弃、不参与比对和输出的列。</li>
-        <li><b>排除表单：</b>不需要比对和输出的 Sheet 名称。</li>
-        <li><b>指定表单：</b>只比对列出的 Sheet；留空表示比对全部表单。</li>
-        <li><b>忽略比对字段：</b>字段仍会输出，但字段差异不计入高亮与汇总。</li>
-        <li><b>默认锚点：</b>所有表单通用的关键列，用于定位新旧数据中的对应行。</li>
-        <li><b>自定义锚点：</b>为指定表单设置专用锚点，优先级高于默认锚点。</li>
-        <li><b>表单忽略字段 / 表单顺序：</b>分别覆盖指定表单的忽略字段，并设置输出 Sheet 顺序。</li>
+        <li v-for="[title, description] in parameterHelp" :key="title">
+          <b>{{ title }}：</b>{{ description }}
+        </li>
         <li><b>颜色：</b>更新颜色标记有差异的单元格和 Sheet；删除颜色标记旧版本存在而新版本不存在的 Sheet 和列；新增颜色标记旧版本不存在而新版本存在的 Sheet 和列。</li>
       </ul>
 
@@ -195,6 +299,20 @@ function applyMaxWorkers(value) {
     @update:max-workers="applyMaxWorkers"
     @update:is-dark="toggleTheme"
   />
+  </template>
+
+  <el-dialog v-model="passwordVisible" title="修改密码" width="420px" append-to-body>
+    <el-form label-position="top" @submit.prevent="changePassword">
+      <el-form-item label="当前密码">
+        <el-input v-model="passwordForm.current_password" type="password" show-password />
+      </el-form-item>
+      <el-form-item label="新密码（至少 8 位）">
+        <el-input v-model="passwordForm.new_password" type="password" show-password />
+      </el-form-item>
+      <el-button type="primary" @click="changePassword">确认修改</el-button>
+    </el-form>
+  </el-dialog>
+  </template>
 </template>
 
 <style scoped>

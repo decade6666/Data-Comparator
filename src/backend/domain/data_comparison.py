@@ -24,7 +24,6 @@ from .excel_header_utils import read_single_sheet_from_excel
 from .excel_utils import apply_highlight_to_worksheet
 from .processing_control import (
     check_stop_frequently,
-    set_global_stop_flag,
     update_progress,
 )
 from .sheet_process_result import SheetProcessResult
@@ -74,7 +73,7 @@ def _maybe_gc_collect(threshold_percent=70, log_func=None):
 
 
 def process_single_sheet_complete(
-    sheet_name, old_path, new_path, config, progress_manager
+    sheet_name, old_path, new_path, config, progress_manager, stop_flag=None
 ):
     """
     处理单个Excel Sheet的完整流程：包括读取数据、比对差异，并返回处理结果。
@@ -109,7 +108,9 @@ def process_single_sheet_complete(
         # print(f"开始处理：[{sheet_name}]")
         progress_manager.update_sheet_progress(sheet_name, "正在处理")  # 更新GUI进度
 
-        check_stop_frequently(progress_manager.log_func)  # 频繁检查是否需要停止操作
+        check_stop_frequently(
+            progress_manager.log_func, stop_flag
+        )  # 频繁检查是否需要停止操作
 
         anchor_row_num = config.anchor_row_num
         header_row_num = config.header_row_num
@@ -124,6 +125,7 @@ def process_single_sheet_complete(
             header_row_num,
             log_func,
             config.common_cols_to_drop,
+            stop_flag,
         )
         new_df_raw = read_single_sheet_from_excel(
             new_path,
@@ -132,6 +134,7 @@ def process_single_sheet_complete(
             header_row_num,
             log_func,
             config.common_cols_to_drop,
+            stop_flag,
         )
 
         old_df = old_df_raw if old_df_raw is not None else None
@@ -389,6 +392,7 @@ def process_single_sheet_complete(
                     config,
                     progress_manager,
                     ignore_cols=effective_ignore_cols,
+                    stop_flag=stop_flag,
                 )
 
                 result.change_type = change_type  # 设置变更类型
@@ -534,7 +538,14 @@ def process_new_sheet(sheet_name, new_df, config, progress_manager):
 
 
 def perform_full_comparison(
-    sheet_name, old_df, new_df, key_cols, config, progress_manager, ignore_cols=None
+    sheet_name,
+    old_df,
+    new_df,
+    key_cols,
+    config,
+    progress_manager,
+    ignore_cols=None,
+    stop_flag=None,
 ):
     """
     执行完整的数据比对流程。
@@ -654,6 +665,7 @@ def perform_full_comparison(
             sheet_name=sheet_name,
             log_func=progress_manager.safe_log,
             ignore_cols=ignore_cols,  # 忽略比对的字段列列表
+            stop_flag=stop_flag,
         )
 
         has_changes = False  # 标记整个Sheet是否有数据变化
@@ -926,7 +938,7 @@ def create_anchor_by_sas_names(df, key_sas_names, log_func, sheet_name=""):
 
 
 def compare_columns_by_sas_names(
-    merged_df, key_sas_names, sheet_name, log_func, ignore_cols=None
+    merged_df, key_sas_names, sheet_name, log_func, ignore_cols=None, stop_flag=None
 ):
     """
     基于SASFieldName比对合并后的DataFrame的列差异。
@@ -1030,7 +1042,7 @@ def compare_columns_by_sas_names(
     for col in non_anchor_compare_cols:
         # 提高检查频率：每20次列处理检查一次
         if check_counter[0] % 20 == 0:
-            check_stop_frequently(log_func)
+            check_stop_frequently(log_func, stop_flag)
         check_counter[0] += 1
 
         if col not in merged_df.columns or f"{col}_OLD_" not in merged_df.columns:
@@ -1200,6 +1212,7 @@ def process_edc_multithreaded(
     config=None,
     progress_func=None,
     stop_flag=None,
+    work_dir=None,
 ):
     """
     多线程优化版的EDC处理主函数。
@@ -1214,13 +1227,16 @@ def process_edc_multithreaded(
         config (ConfigManager, optional): 配置对象。如果为None，则使用全局配置变量。
         progress_func (callable, optional): GUI进度更新回调函数。
         stop_flag (threading.Event, optional): 停止标志，用于控制线程中断。默认为None。
+        work_dir (str, optional): 任务级临时工作目录（中间文件隔离，避免并发互删）。
     Returns:
         str: 最终输出的Excel文件路径。
     Raises:
         RuntimeError: 如果处理过程中发生致命错误（例如文件保存失败）。
         InterruptedError: 如果用户请求停止操作。
     """
-    set_global_stop_flag(stop_flag)  # 设置全局停止标志，以便所有线程都能访问
+    if work_dir is None:
+        work_dir = get_app_temp_dir()
+    os.makedirs(work_dir, exist_ok=True)
 
     # 在函数开始处创建最终结果工作簿
     final_wb = Workbook()
@@ -1235,7 +1251,7 @@ def process_edc_multithreaded(
         # 文件预处理：解除保护、清除筛选器、删除排除的Sheet
         log_func("正在预处理旧版本文件...")
         old_result = check_and_remove_file_protection(
-            old_path, exclude_sheets, log_func
+            old_path, exclude_sheets, log_func, stop_flag=stop_flag, work_dir=work_dir
         )
         current_old_path = (
             old_result[2] if old_result and len(old_result) > 2 else old_path
@@ -1243,7 +1259,7 @@ def process_edc_multithreaded(
 
         log_func("正在预处理新版本文件...")
         new_result = check_and_remove_file_protection(
-            new_path, exclude_sheets, log_func
+            new_path, exclude_sheets, log_func, stop_flag=stop_flag, work_dir=work_dir
         )
         current_new_path = (
             new_result[2] if new_result and len(new_result) > 2 else new_path
@@ -1346,6 +1362,7 @@ def process_edc_multithreaded(
                     current_new_path,
                     config,
                     progress_manager,
+                    stop_flag,
                     # global_split_config # Removed
                 ): sheet_name
                 for sheet_name in sheets_to_process
@@ -1618,9 +1635,9 @@ def process_edc_multithreaded(
             final_wb.close()
         except Exception as e:
             log_func(f"⚠️ 关闭工作簿时出错: {str(e)}")
-        # 清理所有 nofilter 缓存文件（静默，不写入日志）
+        # 清理本任务临时目录下的 nofilter 缓存文件（并发时互不影响）
         try:
-            cleanup_nofilter_files()
+            cleanup_nofilter_files(work_dir=work_dir)
         except Exception:
             pass
 
@@ -1637,8 +1654,7 @@ def process_edc_multithreaded(
         pass
 
     try:
-        app_temp_dir = get_app_temp_dir()
-        parameters_file_path = os.path.join(app_temp_dir, "parameters.json")
+        parameters_file_path = os.path.join(work_dir, "parameters.json")
         if os.path.exists(parameters_file_path):
             os.remove(parameters_file_path)
     except Exception:

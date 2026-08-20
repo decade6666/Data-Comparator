@@ -35,23 +35,6 @@ def test_repository_lists_and_deletes_documents(tmp_path) -> None:
     assert repository.list_configurations() == ["b"]
 
 
-def test_repository_creates_missing_builtin_templates(tmp_path) -> None:
-    repository = JsonParameterRepository(base_dir_getter=lambda: str(tmp_path))
-
-    repository.ensure_builtin_templates(
-        {
-            "tpl": {
-                "old_file_path": "",
-                "new_file_path": "",
-                "output_directory": "",
-            }
-        }
-    )
-
-    assert repository.list_configurations() == ["tpl"]
-    assert repository.load_document("tpl") is not None
-
-
 def test_repository_rejects_non_object_document(tmp_path) -> None:
     repository = JsonParameterRepository(base_dir_getter=lambda: str(tmp_path))
     repository.ensure_config_directory()

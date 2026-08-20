@@ -101,21 +101,3 @@ def test_validate_asset_raw_path_accepts_normal(monkeypatch) -> None:
     safe, _ = path_security.validate_asset_raw_path("assets/app.abc123.js")
 
     assert safe
-
-
-def test_get_browse_roots_defaults_to_home(monkeypatch) -> None:
-    monkeypatch.delenv("DATASET_COMPARATOR_BROWSE_ROOTS", raising=False)
-
-    roots = path_security.get_browse_roots()
-
-    assert roots == [os.path.expanduser("~")]
-
-
-def test_get_browse_roots_parses_env(monkeypatch) -> None:
-    monkeypatch.setenv(
-        "DATASET_COMPARATOR_BROWSE_ROOTS", "/data/a, /data/b ,"
-    )
-
-    roots = path_security.get_browse_roots()
-
-    assert roots == ["/data/a", "/data/b"]
