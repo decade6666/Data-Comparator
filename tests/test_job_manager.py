@@ -43,6 +43,7 @@ def test_submit_runs_and_completes(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         release.wait(10)
         progress_func("开始处理表单", 20)
@@ -78,6 +79,7 @@ def test_progress_func_writes_partial_updates(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         for percent in (20, 45, 85, 100):
             progress_func(f"进度 {percent}", percent)
@@ -104,6 +106,7 @@ def test_log_lines_respect_since_cursor(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         log_func("line1")
         log_func("line2")
@@ -136,6 +139,7 @@ def test_cancel_sets_stop_flag_and_marks_cancelled(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         flag_holder["flag"] = stop_flag
         started.set()
@@ -164,6 +168,7 @@ def test_cancel_terminal_job_is_noop(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         return "/tmp/out/report.xlsx"
 
@@ -188,6 +193,7 @@ def test_concurrent_submit_rejected(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         started.set()
         release.wait(10)
@@ -216,6 +222,7 @@ def test_failed_job_records_error(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         raise RuntimeError("保存文件失败")
 
@@ -241,6 +248,7 @@ def test_cleanup_removes_expired_jobs(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         return "/tmp/out/report.xlsx"
 
@@ -268,6 +276,7 @@ def test_cleanup_caps_total_jobs(monkeypatch) -> None:
         log_func=None,
         progress_func=None,
         stop_flag=None,
+        work_dir=None,
     ):
         return "/tmp/out/report.xlsx"
 

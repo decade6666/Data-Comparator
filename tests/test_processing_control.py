@@ -8,38 +8,25 @@ import pytest
 from src.backend.domain.processing_control import (
     check_stop,
     check_stop_frequently,
-    set_global_stop_flag,
     update_progress,
 )
 
 
-@pytest.fixture(autouse=True)
-def reset_global_stop_flag():
-    set_global_stop_flag(None)
-    yield
-    set_global_stop_flag(None)
-
-
-def test_check_stop_frequently_uses_global_stop_flag() -> None:
+def test_check_stop_frequently_raises_on_set_flag() -> None:
     messages = []
     stop_flag = threading.Event()
     stop_flag.set()
-    set_global_stop_flag(stop_flag)
 
     with pytest.raises(InterruptedError, match="用户停止了操作"):
-        check_stop_frequently(messages.append)
+        check_stop_frequently(messages.append, stop_flag)
 
     assert messages == ["处理已被用户停止"]
 
 
-def test_check_stop_frequently_prefers_explicit_stop_flag() -> None:
+def test_check_stop_frequently_passes_on_unset_flag() -> None:
     messages = []
-    global_flag = threading.Event()
-    global_flag.set()
-    explicit_flag = threading.Event()
-    set_global_stop_flag(global_flag)
 
-    check_stop_frequently(messages.append, explicit_flag)
+    check_stop_frequently(messages.append, threading.Event())
 
     assert messages == []
 
@@ -48,10 +35,9 @@ def test_check_stop_skips_until_counter_interval() -> None:
     messages = []
     stop_flag = threading.Event()
     stop_flag.set()
-    set_global_stop_flag(stop_flag)
     counter = [1]
 
-    check_stop(messages.append, check_counter=counter)
+    check_stop(messages.append, stop_flag, check_counter=counter)
 
     assert counter == [2]
     assert messages == []
@@ -61,11 +47,10 @@ def test_check_stop_raises_on_counter_interval() -> None:
     messages = []
     stop_flag = threading.Event()
     stop_flag.set()
-    set_global_stop_flag(stop_flag)
     counter = [100]
 
     with pytest.raises(InterruptedError, match="用户停止了操作"):
-        check_stop(messages.append, check_counter=counter)
+        check_stop(messages.append, stop_flag, check_counter=counter)
 
     assert counter == [101]
     assert messages == ["处理已被用户停止"]
@@ -130,14 +115,39 @@ def test_read_single_sheet_propagates_interrupted_error(monkeypatch) -> None:
     )
     stop_flag = threading.Event()
     stop_flag.set()
-    set_global_stop_flag(stop_flag)
 
     with pytest.raises(InterruptedError, match="用户停止了操作"):
         excel_header_utils.read_single_sheet_from_excel(
-            "file.xlsx", "Sheet1", 1, 1, lambda _message: None
+            "file.xlsx", "Sheet1", 1, 1, lambda _message: None, stop_flag=stop_flag
         )
 
     assert closed == [True]
+
+
+def test_read_single_sheet_passes_unset_flag(monkeypatch) -> None:
+    """未触发停止标志时，显式传入的 stop_flag 不应抛异常。"""
+    fake_pandas = types.SimpleNamespace(DataFrame=lambda *args, **kwargs: object())
+    fake_openpyxl = types.SimpleNamespace(load_workbook=lambda *args, **kwargs: None)
+    monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
+    monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
+    sys.modules.pop("src.backend.domain.excel_header_utils", None)
+    excel_header_utils = importlib.import_module(
+        "src.backend.domain.excel_header_utils"
+    )
+
+    monkeypatch.setattr(
+        excel_header_utils,
+        "load_workbook",
+        lambda *args, **kwargs: types.SimpleNamespace(
+            sheetnames=["Sheet1"],
+            __getitem__=lambda self, name: None,
+            close=lambda: None,
+        ),
+    )
+
+    excel_header_utils.read_single_sheet_from_excel(
+        "file.xlsx", "Sheet1", 1, 1, lambda _message: None, stop_flag=threading.Event()
+    )
 
 
 def test_file_runtime_propagates_interrupted_error_without_fallback(
@@ -176,9 +186,12 @@ def test_file_runtime_propagates_interrupted_error_without_fallback(
         lambda *args, **kwargs: fallback_calls.append(args),
     )
 
+    stop_flag = threading.Event()
+    stop_flag.set()
+
     with pytest.raises(InterruptedError, match="用户停止了操作"):
         file_runtime.check_and_remove_file_protection(
-            str(source_file), [], lambda _message: None
+            str(source_file), [], lambda _message: None, stop_flag=stop_flag
         )
 
     assert fallback_calls == []

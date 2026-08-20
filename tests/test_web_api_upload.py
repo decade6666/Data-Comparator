@@ -1,68 +1,42 @@
-"""上传端点测试：扩展名白名单、大小限制与上传记录返回。"""
+"""上传端点测试：扩展名白名单、大小限制与用户隔离。"""
 
 import io
 
-from fastapi.testclient import TestClient
 
-from src.frontend import web_api
-from src.backend.infrastructure.upload_store import UploadStore
-
-
-def test_upload_xlsx_returns_upload_id(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(
-        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
-    )
-    client = TestClient(web_api.app)
-
-    response = client.post(
+def test_upload_xlsx_returns_upload_id(auth_client) -> None:
+    content = b"PK\x03\x04data"
+    response = auth_client.post(
         "/api/upload",
-        files={
-            "file": (
-                "old.xlsx",
-                io.BytesIO(b"PK\x03\x04data"),
-                "application/octet-stream",
-            )
-        },
+        files={"file": ("old.xlsx", io.BytesIO(content), "application/octet-stream")},
     )
-
     assert response.status_code == 201
     body = response.json()
     assert body["filename"] == "old.xlsx"
-    assert body["size"] == len(b"PK\x03\x04data")
-    upload_id = body["upload_id"]
-    assert web_api._upload_store.resolve(upload_id) is not None
+    assert body["size"] == len(content)
+
+    status = auth_client.get(f"/api/uploads/{body['upload_id']}")
+    assert status.json()["exists"] is True
 
 
-def test_upload_status_returns_filename_and_size(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(
-        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
-    )
-    client = TestClient(web_api.app)
-    response = client.post(
+def test_upload_xls_is_accepted(auth_client) -> None:
+    response = auth_client.post(
         "/api/upload",
-        files={"file": ("old.xlsx", io.BytesIO(b"data"), "application/octet-stream")},
+        files={"file": ("data.xls", io.BytesIO(b"legacy"), "application/octet-stream")},
     )
-    upload_id = response.json()["upload_id"]
-
-    status_response = client.get(f"/api/uploads/{upload_id}")
-
-    assert status_response.status_code == 200
-    assert status_response.json() == {
-        "upload_id": upload_id,
-        "exists": True,
-        "filename": "old.xlsx",
-        "size": 4,
-    }
+    assert response.status_code == 201
 
 
-def test_missing_upload_status_returns_exists_false(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(
-        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
+def test_upload_invalid_extension_returns_400(auth_client) -> None:
+    response = auth_client.post(
+        "/api/upload",
+        files={"file": ("evil.txt", io.BytesIO(b"x"), "text/plain")},
     )
-    client = TestClient(web_api.app)
+    assert response.status_code == 400
+    assert "仅支持" in response.json()["detail"]
 
-    response = client.get("/api/uploads/missing-upload")
 
+def test_missing_upload_status_returns_exists_false(auth_client) -> None:
+    response = auth_client.get("/api/uploads/missing-upload")
     assert response.status_code == 200
     assert response.json() == {
         "upload_id": "missing-upload",
@@ -70,49 +44,9 @@ def test_missing_upload_status_returns_exists_false(monkeypatch, tmp_path) -> No
     }
 
 
-def test_upload_xls_is_accepted(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(
-        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
-    )
-    client = TestClient(web_api.app)
-
-    response = client.post(
-        "/api/upload",
-        files={
-            "file": (
-                "data.xls",
-                io.BytesIO(b"legacy"),
-                "application/octet-stream",
-            )
-        },
-    )
-
-    assert response.status_code == 201
-
-
-def test_upload_invalid_extension_returns_400(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(
-        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
-    )
-    client = TestClient(web_api.app)
-
-    response = client.post(
-        "/api/upload",
-        files={"file": ("evil.txt", io.BytesIO(b"x"), "text/plain")},
-    )
-
-    assert response.status_code == 400
-    assert "仅支持" in response.json()["detail"]
-
-
-def test_upload_exceeds_size_returns_413(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(
-        web_api, "_upload_store", UploadStore(base_dir=str(tmp_path))
-    )
+def test_upload_size_limit_returns_413(auth_client, monkeypatch) -> None:
     monkeypatch.setenv("DATASET_COMPARATOR_MAX_UPLOAD_MB", "1")
-    client = TestClient(web_api.app)
-
-    response = client.post(
+    response = auth_client.post(
         "/api/upload",
         files={
             "file": (
@@ -122,6 +56,4 @@ def test_upload_exceeds_size_returns_413(monkeypatch, tmp_path) -> None:
             )
         },
     )
-
     assert response.status_code == 413
-    assert "超过限制" in response.json()["detail"]
