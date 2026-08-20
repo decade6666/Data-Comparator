@@ -41,11 +41,11 @@ pip install -e .[performance]
    ```
 2. 启动服务（`frontend/dist` 由 FastAPI 自动托管）：
    ```bash
-   DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8000 dataset-comparator-web
+   DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8888 dataset-comparator-web
    ```
-3. 浏览器打开 `http://127.0.0.1:8000/` 即可使用。
+3. 浏览器打开 `http://127.0.0.1:8888/` 即可使用。
 
-前端开发模式（Vite 热更新，代理 `/api` 到后端 8000 端口）：
+前端开发模式（Vite 热更新，代理 `/api` 到后端 8888 端口）：
 ```bash
 cd frontend && npm run dev
 ```
@@ -59,7 +59,7 @@ cd frontend && npm run dev
 - 项目目录：`/opt/dataset-comparator`
 - 服务账号：`dataset-comparator`
 - Excel 文件和报告目录：`/data/dataset-comparator`
-- 服务端口：`8000`
+- 服务端口：`8888`
 - 用户数据根目录：`/var/lib/dataset-comparator/data`（SQLite、配置、上传文件、结果均按用户隔离）
 
 认证密钥与首次启动管理员建议写入仅服务账号可读的 `/etc/dataset-comparator.env`：
@@ -138,7 +138,7 @@ Environment="HOME=/var/lib/dataset-comparator"
 Environment="PATH=/opt/dataset-comparator/.venv/bin"
 EnvironmentFile=/etc/dataset-comparator.env
 Environment="DATASET_COMPARATOR_WEB_HOST=127.0.0.1"
-Environment="DATASET_COMPARATOR_WEB_PORT=8000"
+Environment="DATASET_COMPARATOR_WEB_PORT=8888"
 Environment="DATASET_COMPARATOR_STATIC_DIR=/opt/dataset-comparator/frontend/dist"
 ExecStart=/opt/dataset-comparator/.venv/bin/python -m src.main_web
 Restart=on-failure
@@ -157,7 +157,7 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now dataset-comparator
 sudo systemctl status dataset-comparator --no-pager
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8888/health
 ```
 
 常用运维命令：
@@ -184,14 +184,14 @@ sudo -u dataset-comparator -H sh -c '
   nohup env \
     HOME=/var/lib/dataset-comparator \
     DATASET_COMPARATOR_WEB_HOST=127.0.0.1 \
-    DATASET_COMPARATOR_WEB_PORT=8000 \
+    DATASET_COMPARATOR_WEB_PORT=8888 \
     DATASET_COMPARATOR_STATIC_DIR=/opt/dataset-comparator/frontend/dist \
     .venv/bin/python -m src.main_web \
     >> /var/lib/dataset-comparator/logs/web.log 2>&1 &
   echo $! > /var/lib/dataset-comparator/dataset-comparator.pid
 '
 
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8888/health
 ```
 
 查看日志或停止 `nohup` 进程：
@@ -205,7 +205,7 @@ sudo kill "$(sudo cat /var/lib/dataset-comparator/dataset-comparator.pid)"
 
 - 启动 Web/API 服务：
   ```bash
-  DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8000 dataset-comparator-web
+  DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8888 dataset-comparator-web
   ```
   未安装脚本时可直接运行：
   ```bash
@@ -214,7 +214,7 @@ sudo kill "$(sudo cat /var/lib/dataset-comparator/dataset-comparator.pid)"
 
 - 健康检查：
   ```bash
-  curl http://127.0.0.1:8000/health
+  curl http://127.0.0.1:8888/health
   ```
 
 - 认证：
@@ -224,18 +224,18 @@ sudo kill "$(sudo cat /var/lib/dataset-comparator/dataset-comparator.pid)"
 
 - 上传并异步比对：
   ```bash
-  TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
+  TOKEN=$(curl -s -X POST http://127.0.0.1:8888/api/auth/login \
     -H 'Content-Type: application/json' \
     -d '{"username":"<管理员用户名>","password":"<管理员密码>"}' | jq -r .access_token)
 
-  OLD_ID=$(curl -s -X POST http://127.0.0.1:8000/api/upload \
+  OLD_ID=$(curl -s -X POST http://127.0.0.1:8888/api/upload \
     -H "Authorization: Bearer $TOKEN" \
     -F 'file=@/data/old.xlsx' | jq -r .upload_id)
-  NEW_ID=$(curl -s -X POST http://127.0.0.1:8000/api/upload \
+  NEW_ID=$(curl -s -X POST http://127.0.0.1:8888/api/upload \
     -H "Authorization: Bearer $TOKEN" \
     -F 'file=@/data/new.xlsx' | jq -r .upload_id)
 
-  curl -X POST http://127.0.0.1:8000/api/jobs \
+  curl -X POST http://127.0.0.1:8888/api/jobs \
     -H "Authorization: Bearer $TOKEN" \
     -H 'Content-Type: application/json' \
     -d "{\"old_file_upload_id\":\"$OLD_ID\",\"new_file_upload_id\":\"$NEW_ID\"}"

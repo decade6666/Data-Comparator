@@ -16,7 +16,7 @@
 Web 服务由 `src/main_web.py` 通过 Uvicorn 启动：
 
 ```bash
-DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8000 python -m src.main_web
+DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8888 python -m src.main_web
 ```
 
 ## 对外接口

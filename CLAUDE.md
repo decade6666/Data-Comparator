@@ -67,17 +67,17 @@ python -m pip install -e .[dev]
 优先使用 Web/API 入口：
 
 ```bash
-DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8000 dataset-comparator-web
+DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8888 dataset-comparator-web
 # 或
-DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8000 python -m src.main_web
+DATASET_COMPARATOR_WEB_HOST=0.0.0.0 DATASET_COMPARATOR_WEB_PORT=8888 python -m src.main_web
 ```
 
 主要接口：
 
 ```bash
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8888/health
 
-curl -X POST http://127.0.0.1:8000/api/compare \
+curl -X POST http://127.0.0.1:8888/api/compare \
   -H 'Content-Type: application/json' \
   -d '{
     "old_file_path": "/data/old.xlsx",
