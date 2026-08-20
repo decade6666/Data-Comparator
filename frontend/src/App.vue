@@ -99,6 +99,9 @@ async function changePassword() {
 }
 
 function logout() {
+  settingsVisible.value = false
+  passwordVisible.value = false
+  helpVisible.value = false
   auth.logout()
   resetSheets()
   job.reset()
@@ -130,8 +133,8 @@ function openPasswordFromSettings() {
           </button>
           <button
             class="icon-btn"
-            title="高级设置"
-            aria-label="高级设置"
+            title="设置"
+            aria-label="设置"
             @click="settingsVisible = true"
           >
             <el-icon :size="16"><Setting /></el-icon>
@@ -177,8 +180,8 @@ function openPasswordFromSettings() {
       </button>
       <button
         class="icon-btn"
-        title="高级设置"
-        aria-label="高级设置"
+        title="设置"
+        aria-label="设置"
         @click="settingsVisible = true"
       >
         <el-icon :size="16"><Setting /></el-icon>
@@ -258,10 +261,10 @@ function openPasswordFromSettings() {
         <li><b>颜色：</b>更新颜色标记有差异的单元格和 Sheet；删除颜色标记旧版本存在而新版本不存在的 Sheet 和列；新增颜色标记旧版本不存在而新版本存在的 Sheet 和列。</li>
       </ul>
 
-      <h4>🎛 高级设置</h4>
+      <h4>🎛 设置</h4>
       <ul>
         <li><b>最大线程数：</b>控制同时处理的 Sheet 数量，默认值为 4；通常不建议超过 CPU 核心数的两倍。</li>
-        <li><b>深色模式：</b>点击页面右上角的主题按钮，或在高级设置中切换界面主题。</li>
+        <li><b>深色模式：</b>点击页面右上角的主题按钮，或在设置中切换界面主题。</li>
         <li><b>比对状态：</b>进度卡片显示等待、处理中、完成、失败或停止状态；完成后仍可点击「开始比对」再次运行。</li>
       </ul>
 

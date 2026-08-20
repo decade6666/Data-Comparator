@@ -12,7 +12,7 @@ defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark', 'change-
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="高级设置"
+    title="设置"
     width="420px"
     append-to-body
     @update:model-value="$emit('update:modelValue', $event)"
