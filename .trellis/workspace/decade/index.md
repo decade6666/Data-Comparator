@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-08-19
+- **Total Sessions**: 6
+- **Last Active**: 2026-08-20
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~175 | Active |
+| `journal-1.md` | ~216 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-08-20 | Web UI 六项优化部署 + 设置弹窗修复 + 默认端口 8888 对齐 | `a291a35`, `3e33e6e` | `main` |
 | 5 | 2026-08-19 | 用户隔离与认证 + 配置回收站（三期） | `25267ef`, `f50e3ad`, `f633682` | `main` |
 | 4 | 2026-08-19 | README 生产环境后台部署步骤 | `c6835d6` | `worktree-docs-production-deploy` |
 | 3 | 2026-08-18 | 完成 Web UI 重构与上传持久化 | `c1234a3` | `worktree-feat-web-ui` |

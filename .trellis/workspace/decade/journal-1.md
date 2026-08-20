@@ -173,3 +173,44 @@ JWT 认证与按用户数据隔离；管理员用户管理视图（改名/硬删
 ### Next Steps
 
 - None - task complete
+
+## 2026-08-20 — Web UI 六项优化（feat/web-ui-optimizations → PR #6）
+
+- 任务：08-19-web-ui-optimizations，worktree /tmp/dc-ui-optimizations 已提交（80b265d），PR 已开。
+- 六项：进度条归零 / 表单扫描持久化到服务器项目文档 / 下载 fetch+blob 带鉴权修复 401 / 导出剔除文件字段+弹窗提醒+修临时文件泄漏 / 配置→项目全面改名 / 修改密码·退出登录移入设置弹窗。
+- 关键坑：esbuild 具名导入只认可模块顶层具名导出，`useConfigState` 从 `useSheets` 具名导入函数导致生产构建失败（vitest 不报）→ 补顶层 `export { resetSheets, restoreSheetsFromConfig }`。
+- 测试：后端 183 过（含新 test_export_strips_file_and_sheet_fields），前端 12 过，生产构建通过，浏览器 E2E 全验证。
+
+
+## Session 6: Web UI 六项优化部署 + 设置弹窗修复 + 默认端口 8888 对齐
+
+**Date**: 2026-08-20
+**Task**: Web UI 六项优化部署 + 设置弹窗修复 + 默认端口 8888 对齐
+**Branch**: `main`
+
+### Summary
+
+六项 UI 优化（进度条/表单持久化/下载鉴权/导出清理/项目改名/设置弹窗）经 PR #6 合并并部署到 8888；修复退出登录后重登自动弹出设置弹窗，高级设置改名设置；默认端口统一 8888 并同步文档
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a291a35` | (see git log) |
+| `3e33e6e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
