@@ -214,3 +214,36 @@ JWT 认证与按用户数据隔离；管理员用户管理视图（改名/硬删
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 项目编辑：改名 + 导入模板覆盖参数
+
+**Date**: 2026-08-20
+**Task**: 项目编辑：改名 + 导入模板覆盖参数
+**Branch**: `main`
+
+### Summary
+
+项目列表新增编辑按钮：可改名（后端 rename 端点）与导入内置模板覆盖参数；修复编辑前未加载参数导致保存丢失的问题；E2E 验证改名/模板覆盖/取消/重名冲突，185 pytest + 15 vitest 全绿，已部署生产 8888
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b298e58` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
