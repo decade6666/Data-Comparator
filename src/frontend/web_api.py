@@ -1,25 +1,34 @@
 import json
 import os
 import re
+import shutil
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 from urllib.parse import unquote
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
+from ..backend.application.background_jobs import (
+    start_background_jobs,
+    stop_background_jobs,
+)
 from ..backend.application.comparison_runner import run_comparison
-from ..backend.application.job_manager import JobManager
+from ..backend.application.job_manager import get_job_manager
+from ..backend.application.recycle_bin_service import RecycleBinService
+from ..backend.application.user_admin_service import get_bootstrap_admin_credentials
+from ..backend.infrastructure.database import get_session, init_db, session_context
 from ..backend.infrastructure.file_runtime import get_sheet_names
+from ..backend.infrastructure.models.user import User
 from ..backend.infrastructure.parameter_repository import (
     JsonParameterRepository,
 )
 from ..backend.infrastructure.parameter_templates import BUILTIN_TEMPLATES
 from ..backend.infrastructure.path_security import (
-    get_browse_roots,
     is_safe_path,
     validate_asset_raw_path,
 )
@@ -30,23 +39,89 @@ from ..backend.infrastructure.upload_store import (
 )
 from ..shared.contracts import ParameterColors, ParameterDocument
 from ..shared.log_utils import log
+from .dependencies import get_current_user, require_admin
+from .routers import admin as admin_router
+from .routers import auth as auth_router
+from .routers import users as users_router
 
 API_TITLE = "Dataset Comparator API"
-API_VERSION = "1.0.0"
+API_VERSION = "1.1.0"
+
+_UPLOAD_CLEANUP_INTERVAL_SECONDS = 30 * 60
+_CONFIGS_SUBDIR = "configs"
+_UPLOADS_SUBDIR = "uploads"
+_RESULTS_SUBDIR = "results"
+
+
+def _user_config_dir(user_id: int) -> str:
+    from ..backend.infrastructure.file_runtime import get_user_data_dir
+
+    return os.path.join(get_user_data_dir(user_id), _CONFIGS_SUBDIR)
+
+
+def _user_uploads_dir(user_id: int) -> str:
+    from ..backend.infrastructure.file_runtime import get_user_data_dir
+
+    return os.path.join(get_user_data_dir(user_id), _UPLOADS_SUBDIR)
+
+
+def _user_results_dir(user_id: int) -> str:
+    from ..backend.infrastructure.file_runtime import get_user_data_dir
+
+    return os.path.join(get_user_data_dir(user_id), _RESULTS_SUBDIR)
+
+
+def _repository_for(user_id: int) -> JsonParameterRepository:
+    from ..backend.infrastructure.file_runtime import get_user_data_dir
+
+    def base_dir_getter() -> str:
+        return get_user_data_dir(user_id)
+
+    return JsonParameterRepository(base_dir_getter=base_dir_getter)
+
+
+def _upload_store_for(user_id: int) -> UploadStore:
+    def config_dir_getter() -> str:
+        return _user_config_dir(user_id)
+
+    return UploadStore(
+        base_dir=_user_uploads_dir(user_id),
+        config_dir_getter=config_dir_getter,
+    )
+
+
+def _max_upload_bytes() -> int:
+    raw = os.environ.get("DATASET_COMPARATOR_MAX_UPLOAD_MB", "200").strip()
+    try:
+        megabytes = max(1, int(raw))
+    except ValueError:
+        megabytes = 200
+    return megabytes * 1024 * 1024
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """启动时安装内置配置模板并启动上传清理定时器，关闭时停止。"""
-    _config_repository.ensure_builtin_templates(BUILTIN_TEMPLATES)
+    """启动时初始化数据库与初始管理员，迁移旧全局配置，启动上传清理定时器。"""
+    from ..backend.application.auth_service import get_secret_key
+
+    get_secret_key()
+    init_db()
+    _bootstrap_admin()
+
+    _migrate_legacy_global_configs()
+
     upload_cleanup_timer: Optional[threading.Timer] = None
 
     def _cleanup_loop() -> None:
         nonlocal upload_cleanup_timer
         try:
-            _upload_store.cleanup()
+            users_root = os.path.join(_app_data_dir(), "users")
+            if os.path.isdir(users_root):
+                for user_name in os.listdir(users_root):
+                    uploads_dir = os.path.join(users_root, user_name, _UPLOADS_SUBDIR)
+                    if os.path.isdir(uploads_dir):
+                        _upload_store_for(int(user_name)).cleanup()
         except Exception:
-            # 清理失败不应影响服务主流程
             pass
         upload_cleanup_timer = threading.Timer(
             _UPLOAD_CLEANUP_INTERVAL_SECONDS, _cleanup_loop
@@ -59,14 +134,89 @@ async def lifespan(app: FastAPI):
     )
     upload_cleanup_timer.daemon = True
     upload_cleanup_timer.start()
+    start_background_jobs(app)
     try:
         yield
     finally:
         if upload_cleanup_timer is not None:
             upload_cleanup_timer.cancel()
+        stop_background_jobs(app)
+
+
+def _app_data_dir() -> str:
+    from ..backend.infrastructure.file_runtime import get_app_data_dir
+
+    return get_app_data_dir()
+
+
+def _bootstrap_admin() -> None:
+    """按环境变量创建初始管理员；缺失配置时打印指引并拒绝创建。"""
+    from sqlalchemy import select
+
+    username, password = get_bootstrap_admin_credentials()
+    if not username:
+        log(
+            "未配置初始管理员（DATASET_COMPARATOR_ADMIN_USERNAME/PASSWORD），"
+            "请设置后再启动。",
+            None,
+        )
+        return
+    with session_context() as session:
+        existing = session.scalar(select(User).where(User.username == username))
+        if existing is not None:
+            return
+        from ..backend.application.auth_service import hash_password
+
+        admin = User(
+            username=username,
+            hashed_password=hash_password(password),
+            is_admin=True,
+            auth_version=1,
+        )
+        session.add(admin)
+        session.flush()
+        log(f"已创建初始管理员: {username}", None)
+
+
+def _migrate_legacy_global_configs() -> None:
+    """把旧版全局 temp/configs 迁移到初始管理员名下（仅一次）。"""
+    from sqlalchemy import select
+
+    from ..backend.infrastructure.file_runtime import get_app_temp_dir
+
+    legacy_dir = os.path.join(get_app_temp_dir(), _CONFIGS_SUBDIR)
+    marker = os.path.join(_app_data_dir(), ".legacy_configs_migrated")
+    if os.path.exists(marker) or not os.path.isdir(legacy_dir):
+        return
+    username, _ = get_bootstrap_admin_credentials()
+    if not username:
+        return
+    with session_context() as session:
+        admin = session.scalar(select(User).where(User.username == username))
+        if admin is None:
+            return
+        target_dir = _user_config_dir(admin.id)
+        os.makedirs(target_dir, exist_ok=True)
+        for name in os.listdir(legacy_dir):
+            if not name.endswith(".json"):
+                continue
+            config_name = name[:-5]
+            if config_name in BUILTIN_TEMPLATES:
+                continue
+            source = os.path.join(legacy_dir, name)
+            target = os.path.join(target_dir, name)
+            if not os.path.exists(target):
+                shutil.copy2(source, target)
+        log(f"已迁移旧全局配置到初始管理员 {username}（{admin.id}）", None)
+        Path(marker).touch()
 
 
 app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
+app.include_router(auth_router.router, prefix="/api")
+app.include_router(users_router.router, prefix="/api")
+app.include_router(admin_router.router, prefix="/api")
+
+_job_manager = get_job_manager()
 
 
 class CompareColors(BaseModel):
@@ -76,10 +226,12 @@ class CompareColors(BaseModel):
 
 
 class CompareRequest(BaseModel):
-    old_file_path: str
-    new_file_path: str
-    output_directory: str
+    old_file_upload_id: Optional[str] = None
+    new_file_upload_id: Optional[str] = None
+    output_directory: str = ""
     config_name: str = "web"
+
+    model_config = {"extra": "forbid"}
     anchor_row_num: int = 1
     header_row_num: int = 1
     anchor_row_content: str = "SASFieldName"
@@ -98,9 +250,9 @@ class CompareRequest(BaseModel):
 
     def to_parameter_document(self) -> ParameterDocument:
         document: ParameterDocument = {
-            "old_file_path": self.old_file_path,
-            "new_file_path": self.new_file_path,
-            "output_directory": self.output_directory,
+            "old_file_path": "",
+            "new_file_path": "",
+            "output_directory": "",
             "anchor_row_num": self.anchor_row_num,
             "header_row_num": self.header_row_num,
             "anchor_row_content": self.anchor_row_content,
@@ -139,15 +291,8 @@ class CompareResponse(BaseModel):
 
 
 class JobSubmitRequest(CompareRequest):
-    """异步比对任务提交请求。
+    """异步比对任务提交请求：只接受上传模式，路径字段已下线。"""
 
-    路径字段与上传字段二选一：提供 ``old_file_upload_id`` / ``new_file_upload_id``
-    时走浏览器上传模式，``output_directory`` 可省略（默认输出到临时目录）。
-    """
-
-    old_file_path: str = ""
-    new_file_path: str = ""
-    output_directory: str = ""
     old_file_upload_id: Optional[str] = None
     new_file_upload_id: Optional[str] = None
 
@@ -191,41 +336,13 @@ def _api_log(message: str) -> None:
     log(message, None)
 
 
-_job_manager = JobManager()
-_config_repository = JsonParameterRepository()
-_upload_store = UploadStore(
-    config_dir_getter=lambda: _config_repository.get_configs_dir()
-)
-_UPLOAD_CLEANUP_INTERVAL_SECONDS = 30 * 60
-
-
-def _max_upload_bytes() -> int:
-    raw = os.environ.get("DATASET_COMPARATOR_MAX_UPLOAD_MB", "200").strip()
-    try:
-        megabytes = max(1, int(raw))
-    except ValueError:
-        megabytes = 200
-    return megabytes * 1024 * 1024
-
-
-def _resolve_job_input(
-    label: str, path_value: str, upload_id: Optional[str]
-) -> str:
-    if path_value and upload_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"{label}同时提供了路径和上传文件，请只选择一种方式",
-        )
-    if upload_id:
-        file_path = _upload_store.resolve(upload_id)
-        if file_path is None:
-            raise HTTPException(
-                status_code=400, detail=f"{label}的上传文件不存在或已过期"
-            )
-        return file_path
-    if path_value:
-        return path_value
-    raise HTTPException(status_code=400, detail=f"请提供{label}的路径或上传文件")
+def _resolve_upload(label: str, upload_id: Optional[str], user_id: int) -> str:
+    if not upload_id:
+        raise HTTPException(status_code=400, detail=f"请提供{label}的上传文件")
+    file_path = _upload_store_for(user_id).resolve(upload_id)
+    if file_path is None:
+        raise HTTPException(status_code=400, detail=f"{label}的上传文件不存在或已过期")
+    return file_path
 
 
 @app.get("/health")
@@ -234,10 +351,26 @@ def health() -> Dict[str, str]:
 
 
 @app.post("/api/compare", response_model=CompareResponse)
-def compare(request: CompareRequest) -> CompareResponse:
+def compare(
+    request: CompareRequest,
+    current_user: User = Depends(get_current_user),
+) -> CompareResponse:
+    old_path = _resolve_upload(
+        "旧版本文件", request.old_file_upload_id, current_user.id
+    )
+    new_path = _resolve_upload(
+        "新版本文件", request.new_file_upload_id, current_user.id
+    )
+    document = request.to_parameter_document()
+    document = {
+        **document,
+        "old_file_path": old_path,
+        "new_file_path": new_path,
+        "output_directory": _user_results_dir(current_user.id),
+    }
     try:
         output_path = run_comparison(
-            request.to_parameter_document(),
+            document,
             config_name=request.config_name,
             log_func=_api_log,
         )
@@ -258,21 +391,17 @@ def compare(request: CompareRequest) -> CompareResponse:
 
 
 @app.post("/api/jobs", response_model=JobSubmitResponse, status_code=201)
-def submit_job(request: JobSubmitRequest) -> JobSubmitResponse:
-    upload_mode = bool(
-        request.old_file_upload_id or request.new_file_upload_id
+def submit_job(
+    request: JobSubmitRequest,
+    current_user: User = Depends(get_current_user),
+) -> JobSubmitResponse:
+    old_path = _resolve_upload(
+        "旧版本文件", request.old_file_upload_id, current_user.id
     )
-    if not upload_mode and not request.output_directory:
-        raise HTTPException(status_code=400, detail="请填写所有必要的路径信息")
-    old_path = _resolve_job_input(
-        "旧版本文件", request.old_file_path, request.old_file_upload_id
+    new_path = _resolve_upload(
+        "新版本文件", request.new_file_upload_id, current_user.id
     )
-    new_path = _resolve_job_input(
-        "新版本文件", request.new_file_path, request.new_file_upload_id
-    )
-    output_directory = (
-        request.output_directory or _upload_store.default_output_dir()
-    )
+    output_directory = _user_results_dir(current_user.id)
     document = request.to_parameter_document()
     document = {
         **document,
@@ -281,16 +410,21 @@ def submit_job(request: JobSubmitRequest) -> JobSubmitResponse:
         "output_directory": output_directory,
     }
     try:
-        job = _job_manager.submit(document, config_name=request.config_name)
+        job = _job_manager.submit(
+            document, config_name=request.config_name, user_id=current_user.id
+        )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return JobSubmitResponse(job_id=job.job_id, status=job.status.value)
 
 
 @app.post("/api/upload", response_model=UploadResponse, status_code=201)
-def upload_file(file: UploadFile = File(...)) -> UploadResponse:
+def upload_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> UploadResponse:
     try:
-        record = _upload_store.save(
+        record = _upload_store_for(current_user.id).save(
             file.filename or "upload.xlsx", file.file, _max_upload_bytes()
         )
     except UploadTooLargeError as exc:
@@ -305,9 +439,12 @@ def upload_file(file: UploadFile = File(...)) -> UploadResponse:
 
 
 @app.get("/api/uploads/{upload_id}")
-def get_upload_status(upload_id: str) -> Dict[str, Any]:
+def get_upload_status(
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
     """返回上传文件是否仍可用于恢复后的配置。"""
-    record = _upload_store.get(upload_id)
+    record = _upload_store_for(current_user.id).get(upload_id)
     if record is None:
         return {"upload_id": upload_id, "exists": False}
     return {
@@ -318,106 +455,78 @@ def get_upload_status(upload_id: str) -> Dict[str, Any]:
     }
 
 
-@app.get("/api/browse", response_model=BrowseResponse)
-def browse(path: str, type: str = "all") -> BrowseResponse:
-    roots = get_browse_roots()
-    safe, message = is_safe_path(path, roots)
-    if not safe:
-        raise HTTPException(status_code=403, detail=message)
-    if not os.path.isdir(path):
-        raise HTTPException(status_code=404, detail="目录不存在")
-    entries: List[BrowseEntry] = []
-    for name in sorted(os.listdir(path)):
-        full_path = os.path.join(path, name)
-        is_directory = os.path.isdir(full_path)
-        if is_directory:
-            if type in ("directories", "all"):
-                entries.append(
-                    BrowseEntry(name=name, path=full_path, is_directory=True)
-                )
-            continue
-        if type == "directories":
-            continue
-        ext = os.path.splitext(name)[1].lower()
-        if ext not in (".xlsx", ".xls"):
-            continue
-        try:
-            size = os.path.getsize(full_path)
-        except OSError:
-            size = None
-        entries.append(
-            BrowseEntry(
-                name=name, path=full_path, is_directory=False, size=size
-            )
-        )
-    parent_path = None
-    if entries or os.path.isdir(path):
-        resolved = os.path.abspath(path)
-        for root in roots:
-            root_real = os.path.abspath(root)
-            if resolved != root_real and resolved.startswith(
-                root_real + os.sep
-            ):
-                parent_path = os.path.dirname(resolved)
-                break
-    return BrowseResponse(
-        current_path=os.path.abspath(path),
-        parent_path=parent_path,
-        entries=entries,
-    )
-
-
 @app.get("/api/sheets")
 def get_sheets(
-    file_path: Optional[str] = None, upload_id: Optional[str] = None
+    upload_id: str,
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, List[str]]:
-    if upload_id:
-        resolved = _upload_store.resolve(upload_id)
-        if resolved is None:
-            raise HTTPException(status_code=400, detail="上传文件不存在或已过期")
-    elif file_path:
-        resolved = file_path
-        if not os.path.isfile(resolved):
-            raise HTTPException(status_code=404, detail="文件不存在")
-    else:
-        raise HTTPException(
-            status_code=400, detail="请提供 file_path 或 upload_id"
-        )
+    resolved = _upload_store_for(current_user.id).resolve(upload_id)
+    if resolved is None:
+        raise HTTPException(status_code=400, detail="上传文件不存在或已过期")
     sheets = get_sheet_names(resolved, _api_log)
     return {"sheets": sheets}
 
 
 @app.get("/api/configs")
-def list_configs() -> Dict[str, List[str]]:
+def list_configs(
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, List[str]]:
     return {
-        "configs": _config_repository.list_configurations(),
+        "configs": _repository_for(current_user.id).list_configurations(),
         "builtin_templates": list(BUILTIN_TEMPLATES.keys()),
     }
 
 
 @app.get("/api/configs/{name}")
-def get_config(name: str) -> Dict[str, Any]:
-    document = _config_repository.load_document(name)
+def get_config(
+    name: str,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    document = _repository_for(current_user.id).load_document(name)
     if document is None:
         raise HTTPException(status_code=404, detail="配置不存在")
     return dict(document)
 
 
 @app.put("/api/configs/{name}")
-def save_config(name: str, document: Dict[str, Any]) -> Dict[str, Any]:
+def save_config(
+    name: str,
+    document: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
     if name in BUILTIN_TEMPLATES:
         raise HTTPException(status_code=400, detail="不能覆盖内置模板")
-    _config_repository.save_document(name, cast(ParameterDocument, document))
+    _repository_for(current_user.id).save_document(
+        name, cast(ParameterDocument, document)
+    )
     return {"name": name, "saved": True}
 
 
 @app.delete("/api/configs/{name}")
-def delete_config(name: str) -> Dict[str, Any]:
+def delete_config(
+    name: str,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
     if name in BUILTIN_TEMPLATES:
         raise HTTPException(status_code=400, detail="不能删除内置模板")
-    if not _config_repository.delete_document(name):
+    repository = _repository_for(current_user.id)
+    document = repository.load_document(name)
+    if document is None:
         raise HTTPException(status_code=404, detail="配置不存在")
-    return {"name": name, "deleted": True}
+    try:
+        RecycleBinService.recycle_config(
+            session,
+            owner_id=current_user.id,
+            owner_username=current_user.username,
+            config_name=name,
+            config_path=repository.get_config_path(name),
+            config_document=dict(document),
+            deleted_by_user_deletion=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"name": name, "recycled": True, "deleted": True}
 
 
 class CopyConfigRequest(BaseModel):
@@ -425,21 +534,29 @@ class CopyConfigRequest(BaseModel):
 
 
 @app.post("/api/configs/{name}/copy")
-def copy_config(name: str, request: CopyConfigRequest) -> Dict[str, Any]:
+def copy_config(
+    name: str,
+    request: CopyConfigRequest,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    repository = _repository_for(current_user.id)
     if request.new_name in BUILTIN_TEMPLATES:
         raise HTTPException(status_code=400, detail="不能覆盖内置模板")
-    document = _config_repository.load_document(name)
+    document = repository.load_document(name)
     if document is None:
         raise HTTPException(status_code=404, detail="配置不存在")
-    if _config_repository.load_document(request.new_name) is not None:
+    if repository.load_document(request.new_name) is not None:
         raise HTTPException(status_code=409, detail="目标配置已存在")
-    _config_repository.save_document(request.new_name, document)
+    repository.save_document(request.new_name, document)
     return {"name": request.new_name, "copied": True}
 
 
 @app.get("/api/configs/{name}/export")
-def export_config(name: str) -> FileResponse:
-    document = _config_repository.load_document(name)
+def export_config(
+    name: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    document = _repository_for(current_user.id).load_document(name)
     if document is None:
         raise HTTPException(status_code=404, detail="配置不存在")
     return FileResponse(
@@ -449,9 +566,7 @@ def export_config(name: str) -> FileResponse:
     )
 
 
-def _write_config_json_to_temp(
-    name: str, document: ParameterDocument
-) -> str:
+def _write_config_json_to_temp(name: str, document: ParameterDocument) -> str:
     import tempfile
 
     content = json.dumps(document, ensure_ascii=False, indent=4)
@@ -464,7 +579,10 @@ def _write_config_json_to_temp(
 
 
 @app.post("/api/configs/import")
-async def import_config(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def import_config(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
     raw = await file.read()
     try:
         document = json.loads(raw.decode("utf-8"))
@@ -477,21 +595,32 @@ async def import_config(file: UploadFile = File(...)) -> Dict[str, Any]:
         name = name[:-5]
     if name in BUILTIN_TEMPLATES:
         raise HTTPException(status_code=400, detail="不能覆盖内置模板")
-    _config_repository.save_document(name, cast(ParameterDocument, document))
+    _repository_for(current_user.id).save_document(
+        name, cast(ParameterDocument, document)
+    )
     return {"name": name, "imported": True}
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str, since: int = 0) -> JobStatusResponse:
-    snapshot = _job_manager.snapshot(job_id, since=max(0, since))
+def get_job_status(
+    job_id: str,
+    since: int = 0,
+    current_user: User = Depends(get_current_user),
+) -> JobStatusResponse:
+    snapshot = _job_manager.snapshot(
+        job_id, since=max(0, since), user_id=current_user.id
+    )
     if snapshot is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     return JobStatusResponse(**snapshot)
 
 
 @app.post("/api/jobs/{job_id}/cancel")
-def cancel_job(job_id: str) -> Dict[str, str]:
-    job = _job_manager.cancel_job(job_id)
+def cancel_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, str]:
+    job = _job_manager.cancel_job(job_id, user_id=current_user.id)
     if job is None:
         raise HTTPException(status_code=404, detail="任务不存在")
     if job.status.value in ("completed", "failed", "cancelled"):
@@ -500,9 +629,12 @@ def cancel_job(job_id: str) -> Dict[str, str]:
 
 
 @app.get("/api/jobs/{job_id}/download")
-def download_job_result(job_id: str) -> FileResponse:
+def download_job_result(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
     job = _job_manager.get_job(job_id)
-    if job is None:
+    if job is None or job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="任务不存在")
     with job.lock:
         output_path = job.output_path

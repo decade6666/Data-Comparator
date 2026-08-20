@@ -4,25 +4,37 @@
 把领域层已经支持但此前未被 Web 层使用的 progress_func / log_func / stop_flag
 参数接入任务状态，供前端轮询进度、查看日志和取消任务。
 
-并发约束：由于 ``domain/processing_control.py`` 中的 ``_global_stop_flag`` 是进程级
-全局状态（``data_comparison.process_edc_multithreaded`` 每次运行都会覆写它），
-并发运行多个比对任务会互相覆盖停止标志，因此本管理器强制同一时间最多运行一个
-任务（单任务串行）。
+并发约束：每用户至多 1 个运行中任务；跨用户并发受全局信号量
+``DATASET_COMPARATOR_MAX_CONCURRENT_JOBS``（默认 2）限制，超限任务在
+pending 排队等待。
 """
 
 import datetime
+import os
+import shutil
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ...shared.contracts import ParameterDocument
+from ..infrastructure.file_runtime import get_user_data_dir
 from .comparison_runner import run_comparison
 
 DEFAULT_RETENTION_MINUTES = 30
 DEFAULT_MAX_JOBS = 20
 DEFAULT_SWEEP_INTERVAL_SECONDS = 300
+DEFAULT_MAX_CONCURRENT_JOBS = 2
+
+
+def get_max_concurrent_jobs() -> int:
+    raw = os.environ.get("DATASET_COMPARATOR_MAX_CONCURRENT_JOBS", "").strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return DEFAULT_MAX_CONCURRENT_JOBS
 
 
 class JobStatus(str, Enum):
@@ -46,6 +58,7 @@ class JobState:
     status: JobStatus
     parameters: ParameterDocument
     config_name: str
+    user_id: int
     stop_flag: threading.Event
     created_at: datetime.datetime
     progress_percent: Optional[float] = None
@@ -67,6 +80,7 @@ class JobManager:
         max_jobs: int = DEFAULT_MAX_JOBS,
         sweep_interval_seconds: int = DEFAULT_SWEEP_INTERVAL_SECONDS,
         now: Callable[[], datetime.datetime] = datetime.datetime.now,
+        max_concurrent_jobs: Optional[int] = None,
     ) -> None:
         self._retention_minutes = retention_minutes
         self._max_jobs = max_jobs
@@ -74,30 +88,39 @@ class JobManager:
         self._now = now
         self._lock = threading.Lock()
         self._jobs: Dict[str, JobState] = {}
-        self._active_job_id: Optional[str] = None
+        self._user_active: Dict[int, str] = {}
         self._sweep_timer: Optional[threading.Timer] = None
+        if max_concurrent_jobs is None:
+            max_concurrent_jobs = get_max_concurrent_jobs()
+        self._max_concurrent_jobs = max(1, max_concurrent_jobs)
+        self._semaphore = threading.Semaphore(self._max_concurrent_jobs)
 
     def has_active_job(self) -> bool:
         with self._lock:
-            return self._active_job_id is not None
+            return bool(self._user_active)
 
     def submit(
-        self, parameters: ParameterDocument, config_name: str = "web"
+        self, parameters: ParameterDocument, config_name: str = "web", user_id: int = 0
     ) -> JobState:
-        """登记任务并在后台线程执行；已有任务运行中时抛 ``ValueError``。"""
+        """登记任务并在后台线程执行。
+
+        同一用户已有运行中任务时抛 ``ValueError``；跨用户并发受全局信号量
+        限制，超限任务保持 pending 排队。
+        """
         with self._lock:
-            if self._active_job_id is not None:
+            if user_id in self._user_active:
                 raise ValueError("已有比对任务正在运行，请等待完成或取消后再提交")
             job = JobState(
                 job_id=uuid.uuid4().hex[:16],
                 status=JobStatus.PENDING,
                 parameters=parameters,
                 config_name=config_name,
+                user_id=user_id,
                 stop_flag=threading.Event(),
                 created_at=self._now(),
             )
             self._jobs[job.job_id] = job
-            self._active_job_id = job.job_id
+            self._user_active[user_id] = job.job_id
         self._ensure_sweep_timer()
         thread = threading.Thread(
             target=self._run_thread,
@@ -111,10 +134,16 @@ class JobManager:
     def get_job(self, job_id: str) -> Optional[JobState]:
         return self._jobs.get(job_id)
 
-    def snapshot(self, job_id: str, since: int = 0) -> Optional[dict]:
+    def _job_belongs_to(self, job: JobState, user_id: Optional[int]) -> bool:
+        """归属校验：未提供 user_id 视为管理员/内部访问放行。"""
+        return user_id is None or job.user_id == user_id
+
+    def snapshot(
+        self, job_id: str, since: int = 0, user_id: Optional[int] = None
+    ) -> Optional[dict]:
         """返回供 HTTP 响应使用的任务状态快照（含 since 之后的新日志行）。"""
         job = self._jobs.get(job_id)
-        if job is None:
+        if job is None or not self._job_belongs_to(job, user_id):
             return None
         with job.lock:
             return {
@@ -128,10 +157,37 @@ class JobManager:
                 "error": job.error,
             }
 
-    def cancel_job(self, job_id: str) -> Optional[JobState]:
+    def cancel_all_for_user(self, user_id: int, timeout: float = 10.0) -> int:
+        """取消指定用户所有非终态任务并等待其结束，返回取消数量。
+
+        用户硬删除前调用；等待时间超过 ``timeout`` 时放弃等待（删除流程继续）。
+        """
+        with self._lock:
+            targets = [
+                job
+                for job in self._jobs.values()
+                if job.user_id == user_id
+                and job.status in (JobStatus.PENDING, JobStatus.RUNNING)
+            ]
+        for job in targets:
+            with job.lock:
+                if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+                    job.stop_flag.set()
+        deadline = time.monotonic() + timeout
+        for job in targets:
+            while time.monotonic() < deadline:
+                with job.lock:
+                    if job.status in _TERMINAL_STATUSES:
+                        break
+                time.sleep(0.02)
+        return len(targets)
+
+    def cancel_job(
+        self, job_id: str, user_id: Optional[int] = None
+    ) -> Optional[JobState]:
         """请求停止任务；返回任务状态，已结束任务不做任何操作。"""
         job = self._jobs.get(job_id)
-        if job is None:
+        if job is None or not self._job_belongs_to(job, user_id):
             return None
         with job.lock:
             if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
@@ -140,10 +196,10 @@ class JobManager:
         return job
 
     def get_log_lines(
-        self, job_id: str, since: int = 0
+        self, job_id: str, since: int = 0, user_id: Optional[int] = None
     ) -> Tuple[List[str], int]:
         job = self._jobs.get(job_id)
-        if job is None:
+        if job is None or not self._job_belongs_to(job, user_id):
             return [], 0
         with job.lock:
             return list(job.log_lines[since:]), len(job.log_lines)
@@ -153,9 +209,7 @@ class JobManager:
         current = now or self._now()
         removed = 0
         with self._lock:
-            deadline = current - datetime.timedelta(
-                minutes=self._retention_minutes
-            )
+            deadline = current - datetime.timedelta(minutes=self._retention_minutes)
             for job in list(self._jobs.values()):
                 if (
                     job.status in _TERMINAL_STATUSES
@@ -165,9 +219,7 @@ class JobManager:
                     del self._jobs[job.job_id]
                     removed += 1
             remaining_terminal = [
-                job
-                for job in self._jobs.values()
-                if job.status in _TERMINAL_STATUSES
+                job for job in self._jobs.values() if job.status in _TERMINAL_STATUSES
             ]
             excess = len(self._jobs) - self._max_jobs
             if excess > 0:
@@ -192,9 +244,7 @@ class JobManager:
     def _ensure_sweep_timer(self) -> None:
         with self._lock:
             if self._sweep_timer is None:
-                timer = threading.Timer(
-                    self._sweep_interval_seconds, self._sweep_loop
-                )
+                timer = threading.Timer(self._sweep_interval_seconds, self._sweep_loop)
                 timer.daemon = True
                 timer.start()
                 self._sweep_timer = timer
@@ -207,9 +257,7 @@ class JobManager:
             pass
         with self._lock:
             if self._jobs:
-                timer = threading.Timer(
-                    self._sweep_interval_seconds, self._sweep_loop
-                )
+                timer = threading.Timer(self._sweep_interval_seconds, self._sweep_loop)
                 timer.daemon = True
                 timer.start()
                 self._sweep_timer = timer
@@ -220,13 +268,26 @@ class JobManager:
         job = self._jobs.get(job_id)
         if job is None:
             return
+        acquired = self._semaphore.acquire(timeout=None)
+        try:
+            if not acquired:
+                return
+            self._run_with_semaphore(job_id)
+        finally:
+            self._semaphore.release()
+
+    def _run_with_semaphore(self, job_id: str) -> None:
+        job = self._jobs.get(job_id)
+        if job is None:
+            return
+        if job.stop_flag.is_set():
+            self._finish(job, JobStatus.CANCELLED, error="用户停止了操作")
+            return
         with job.lock:
             job.status = JobStatus.RUNNING
             job.started_at = self._now()
 
-        def job_progress_func(
-            message: str, percent: Optional[int] = None
-        ) -> None:
+        def job_progress_func(message: str, percent: Optional[int] = None) -> None:
             with job.lock:
                 if percent is not None:
                     job.progress_percent = float(percent)
@@ -239,13 +300,16 @@ class JobManager:
             with job.lock:
                 job.log_lines.append(message)
 
+        work_dir = os.path.join(get_user_data_dir(job.user_id), "temp", job.job_id)
         try:
+            os.makedirs(work_dir, exist_ok=True)
             output_path = run_comparison(
                 job.parameters,
                 config_name=job.config_name,
                 log_func=job_log_func,
                 progress_func=job_progress_func,
                 stop_flag=job.stop_flag,
+                work_dir=work_dir,
             )
         except InterruptedError as exc:
             self._finish(job, JobStatus.CANCELLED, error=str(exc))
@@ -257,12 +321,26 @@ class JobManager:
                 job.output_path = output_path
                 job.finished_at = self._now()
         finally:
+            shutil.rmtree(work_dir, ignore_errors=True)
             with self._lock:
-                if self._active_job_id == job_id:
-                    self._active_job_id = None
+                if self._user_active.get(job.user_id) == job_id:
+                    del self._user_active[job.user_id]
 
     def _finish(self, job: JobState, status: JobStatus, error: str) -> None:
         with job.lock:
             job.status = status
             job.error = error
             job.finished_at = self._now()
+
+
+_instance_lock = threading.Lock()
+_instance: Optional[JobManager] = None
+
+
+def get_job_manager() -> JobManager:
+    """模块级 JobManager 单例（web_api 与 users 路由共用）。"""
+    global _instance
+    with _instance_lock:
+        if _instance is None:
+            _instance = JobManager()
+        return _instance

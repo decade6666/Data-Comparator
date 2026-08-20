@@ -21,13 +21,17 @@ except Exception:
 
 
 def check_and_remove_file_protection(
-    file_path: str, exclude_sheets: List[str], log_func
+    file_path: str,
+    exclude_sheets: List[str],
+    log_func,
+    stop_flag=None,
+    work_dir: Optional[str] = None,
 ) -> Tuple[bool, bool, str, List[str]]:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"文件不存在: {file_path}")
 
     base, ext = os.path.splitext(file_path)
-    temp_app_dir = get_app_temp_dir()
+    temp_app_dir = work_dir or get_app_temp_dir()
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
     original_filename = os.path.basename(base)
     new_file_name = f"{original_filename}_nofilter_{timestamp}{ext}"
@@ -35,7 +39,7 @@ def check_and_remove_file_protection(
 
     try:
         shutil.copy2(file_path, new_file_path)
-        check_stop_frequently(log_func)
+        check_stop_frequently(log_func, stop_flag)
     except InterruptedError:
         raise
     except Exception as e:
@@ -91,14 +95,14 @@ def check_and_remove_file_protection(
             excel_app.Visible = False
             excel_app.DisplayAlerts = False
 
-            check_stop_frequently(log_func)
+            check_stop_frequently(log_func, stop_flag)
 
             wb_com = excel_app.Workbooks.Open(
                 new_file_path, UpdateLinks=0, ReadOnly=False
             )
             for ws_com in wb_com.Worksheets:
                 try:
-                    check_stop_frequently(log_func)
+                    check_stop_frequently(log_func, stop_flag)
                 except Exception:
                     if wb_com is not None:
                         wb_com.Close(SaveChanges=False)
@@ -174,7 +178,13 @@ def check_and_remove_file_protection(
             f"⚠️ 主要预处理（pywin32清除筛选器或删除Sheet）失败: {str(e)}，尝试回退方法..."
         )
         try:
-            remove_auto_filters_from_xlsx(new_file_path, new_file_path, log_func)
+            remove_auto_filters_from_xlsx(
+                new_file_path,
+                new_file_path,
+                log_func,
+                stop_flag=stop_flag,
+                work_dir=temp_app_dir,
+            )
             log_func("✅ 成功通过备用方法清除自动筛选器。")
         except InterruptedError:
             raise
@@ -247,6 +257,26 @@ def get_sheet_names(file_path: str, log_func) -> List[str]:
             return []
 
 
+def get_app_data_dir() -> str:
+    """应用持久数据根目录（数据库、按用户隔离的数据）。"""
+    override = os.environ.get("DATASET_COMPARATOR_DATA_DIR", "").strip()
+    if override:
+        os.makedirs(override, exist_ok=True)
+        return override
+    appname = "PyDataCompare"
+    appauthor = "YourCompanyOrAuthor"
+    data_dir = appdirs.user_data_dir(appname, appauthor)
+    os.makedirs(data_dir, exist_ok=True)
+    return data_dir
+
+
+def get_user_data_dir(user_id: int) -> str:
+    """某用户的隔离数据根目录：<data>/users/<uid>。"""
+    user_dir = os.path.join(get_app_data_dir(), "users", str(user_id))
+    os.makedirs(user_dir, exist_ok=True)
+    return user_dir
+
+
 def get_app_temp_dir() -> str:
     appname = "PyDataCompare"
     appauthor = "YourCompanyOrAuthor"
@@ -256,10 +286,14 @@ def get_app_temp_dir() -> str:
     return temp_sub_dir
 
 
-def cleanup_nofilter_files(log_func=None) -> int:
+def cleanup_nofilter_files(log_func=None, work_dir: Optional[str] = None) -> int:
+    """清理指定工作目录下的临时副本；缺省时清理全局临时目录。
+
+    work_dir 用于按任务隔离清理，避免并发任务互删中间文件。
+    """
     removed_count = 0
     try:
-        temp_dir = get_app_temp_dir()
+        temp_dir = work_dir or get_app_temp_dir()
         if not os.path.isdir(temp_dir):
             return 0
         for name in os.listdir(temp_dir):
@@ -281,11 +315,15 @@ def cleanup_nofilter_files(log_func=None) -> int:
 
 
 def remove_auto_filters_from_xlsx(
-    file_path: str, output_path: Optional[str] = None, log_message=None
+    file_path: str,
+    output_path: Optional[str] = None,
+    log_message=None,
+    stop_flag=None,
+    work_dir: Optional[str] = None,
 ) -> None:
     output_path = output_path or file_path.replace(".xlsx", ".xlsx")
 
-    temp_app_dir = get_app_temp_dir()
+    temp_app_dir = work_dir or get_app_temp_dir()
     unique_temp_id = os.urandom(8).hex()
     tmpdirname = os.path.join(temp_app_dir, f"excel_extract_{unique_temp_id}")
     os.makedirs(tmpdirname, exist_ok=True)
@@ -293,11 +331,11 @@ def remove_auto_filters_from_xlsx(
     try:
         with zipfile.ZipFile(file_path, "r") as zip_ref:
             zip_ref.extractall(tmpdirname)
-        check_stop_frequently(log_message)
+        check_stop_frequently(log_message, stop_flag)
 
         sheet_dir = os.path.join(tmpdirname, "xl", "worksheets")
         for filename in os.listdir(sheet_dir):
-            check_stop_frequently(log_message)
+            check_stop_frequently(log_message, stop_flag)
             if filename.startswith("sheet") and filename.endswith(".xml"):
                 sheet_path = os.path.join(sheet_dir, filename)
                 tree = ET.parse(sheet_path)
@@ -312,9 +350,9 @@ def remove_auto_filters_from_xlsx(
 
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as new_zip:
             for foldername, subfolders, filenames in os.walk(tmpdirname):
-                check_stop_frequently(log_message)
+                check_stop_frequently(log_message, stop_flag)
                 for filename in filenames:
-                    check_stop_frequently(log_message)
+                    check_stop_frequently(log_message, stop_flag)
                     file_path_inner = os.path.join(foldername, filename)
                     arcname = os.path.relpath(file_path_inner, tmpdirname)
                     new_zip.write(file_path_inner, arcname)

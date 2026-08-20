@@ -38,6 +38,7 @@ def run_comparison(
     log_func: Optional[LogFunc] = None,
     progress_func: Optional[Callable[[str, Optional[int]], None]] = None,
     stop_flag=None,
+    work_dir: Optional[str] = None,
     process_func: Optional[ProcessFunc] = None,
     config_factory: ConfigFactory = _default_config_factory,
     path_exists: Callable[[str], bool] = os.path.exists,
@@ -64,4 +65,5 @@ def run_comparison(
         config=config,
         progress_func=progress_func,
         stop_flag=stop_flag,
+        **({"work_dir": work_dir} if work_dir is not None else {}),
     )
