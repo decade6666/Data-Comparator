@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Preserve temp-copy preprocessing, avoid mutating original workbooks, use focused pytest coverage, and keep InterruptedError observable."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Define narrow exception handling, non-OOXML recovery, write-failure propagation, and mandatory InterruptedError propagation for the new cleaner."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Keep cleanup status and recoverable non-OOXML messages observable without noisy per-entry logging or workbook-content leakage."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check existing runtime and stop-control helpers before adding the isolated cleaner module."}

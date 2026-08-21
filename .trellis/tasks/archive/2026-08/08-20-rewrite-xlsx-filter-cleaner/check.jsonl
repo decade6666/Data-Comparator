@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review checklist for infrastructure placement, original-file protection, tests, and stop propagation."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Review exception mapping and ensure recoverable input failures do not hide environmental write failures."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Review cleanup logs for actionable context and absence of pywin32/fallback noise."}
