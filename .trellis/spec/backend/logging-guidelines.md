@@ -58,7 +58,7 @@ From `src/backend/infrastructure/file_runtime.py`:
 
 ```python
 log_func(f"所有验证引擎都失败，但文件可能仍可修复")
-log_func(f"备用筛选器清除失败: {str(fallback_e)}")
+log_func(f"ℹ️ 非 OOXML 包（.xls 等），跳过筛选器清理: {str(exc)}")
 ```
 
 ---
@@ -73,7 +73,7 @@ There is no standard schema, but useful messages usually include the business co
 - file path or file role (`old`, `new`, `output`)
 - sheet name
 - operation stage (`validate`, `read`, `save`, `cleanup`, `stop`)
-- fallback branch taken
+- cleanup outcome (rewritten, skipped, or failed)
 - exception text when the action actually failed
 
 ### Good project-native examples
@@ -88,7 +88,12 @@ self.log_message(f"输出目录: {output_path}")
 ```
 
 ```python
-log_func(f"主要预处理失败: {str(e)}，尝试回退方法")
+log_func(
+    "✅ 已清除筛选器：工作表 "
+    f"{result.sheet_autofilters_removed} 处、表格 "
+    f"{result.table_autofilters_removed} 处，恢复隐藏行 "
+    f"{result.hidden_rows_restored} 行"
+)
 ```
 
 ### Current transport pattern
@@ -107,14 +112,13 @@ Log these events consistently:
 - path validation failures
 - file validation results
 - sheet-level skip/new/missing/update decisions
-- fallback paths, especially preprocessing fallbacks
+- cleanup outcomes, especially skipped non-OOXML inputs and recovery failures that may affect the next run
 - output-file and log-file locations
-- cleanup or recovery failures that may affect the next run
 
 ### Real examples in the codebase
 
 - `src/backend/domain/data_comparison.py` logs skipped, new, missing, and empty-sheet branches
-- `src/backend/infrastructure/file_runtime.py` logs validation failures and fallback cleanup behavior
+- `src/backend/infrastructure/file_runtime.py` logs validation results and byte-level cleanup outcomes
 - `src/frontend/web_api.py` logs unexpected comparison failures through `_api_log(...)`
 
 ---
@@ -138,5 +142,5 @@ That is acceptable when needed for diagnosis, but avoid logging more data than t
 - Logging a failure without naming the file or sheet involved
 - Logging inside tight loops at a granularity that hurts performance
 - Emitting success messages before the output workbook is actually saved
-- Swallowing an exception silently during fallback/cleanup without at least one log line
+- Swallowing an exception silently during cleanup without at least one log line
 - Swallowing `InterruptedError` in a broad exception handler and logging it as a normal failure

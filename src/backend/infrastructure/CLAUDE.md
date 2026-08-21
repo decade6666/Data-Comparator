@@ -22,7 +22,9 @@
   - `get_sheet_names(...)`
   - `get_app_temp_dir(...)`
   - `cleanup_nofilter_files(...)`
-  - `remove_auto_filters_from_xlsx(...)`
+- `xlsx_filter_cleaner.py`
+  - `remove_filters(...)`：以字节级 OOXML 定向删除清理 worksheet/table AutoFilter 和筛选隐藏行；无可清理内容时不重写包。
+  - `CleanupOptions` / `FilterCleanupResult`：清理开关与结果统计。
 - `path_security.py`
   - `is_safe_path(...)`：解析后路径必须位于允许目录内。
   - `validate_asset_raw_path(...)`：拒绝绝对路径、点段、反斜杠与 URL 编码绕过。
@@ -42,7 +44,8 @@
 
 ## 关键依赖与配置
 
-- `openpyxl`：读取 workbook、处理 Sheet 和过滤器。
+- `openpyxl`：读取 workbook、处理 Sheet 和输出报告格式。
+- 标准库 `zipfile`/`re`：在不重序列化 XML 的前提下清理 OOXML 筛选器。
 - `appdirs`：定位用户数据目录。
 - `threading.Lock`：保护进度状态。
 - JSON 文件：用户配置持久化格式。
@@ -61,13 +64,15 @@
 - `tests/test_parameter_repository.py`
 - `tests/test_progress_manager.py`
 - `tests/test_processing_control.py` 中覆盖 `file_runtime` 的中断传播行为。
+- `tests/test_file_runtime.py` 覆盖副本预处理、验读、Sheet 名回退和临时文件清理。
+- `tests/test_xlsx_filter_cleaner.py` 覆盖字节级筛选器清理、zip 往返、元数据保留和异常语义。
 
 质量注意：
 
 - 文件系统写入前必须确保目录存在。
 - 非对象 JSON 配置应抛 `ValueError`。
 - 进度回调失败应记录日志，不应破坏主流程。
-- 文件保护与 AutoFilter 清理中遇到 `InterruptedError` 必须传播，不要走 fallback。
+- 文件预处理与 AutoFilter 清理中遇到 `InterruptedError` 必须传播，不得吞掉或转换为普通失败。
 
 ## 常见问题 (FAQ)
 
@@ -89,6 +94,7 @@
 - `parameter_repository.py`
 - `parameter_templates.py`
 - `file_runtime.py`
+- `xlsx_filter_cleaner.py`
 - `progress_manager.py`
 - `__init__.py`
 - `tests/test_parameter_repository.py`
@@ -98,5 +104,6 @@
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-20 | fix | xlsx 筛选器改为保留命名空间的字节级 OOXML 清理，移除不可用的 pywin32/ElementTree 路径并补充中断与往返测试。 |
 | 2026-08-18 | feat | 新增 `path_security.py` 路径白名单校验与 `upload_store.py` 上传临时存储。 |
 | 2026-05-24T03:25:49 | docs | 初始化 `backend/infrastructure` 模块 Claude 指南。 |

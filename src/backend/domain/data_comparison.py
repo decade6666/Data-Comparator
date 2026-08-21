@@ -1248,7 +1248,7 @@ def process_edc_multithreaded(
     try:
         check_stop_frequently(log_func, stop_flag)  # 在开始时检查是否需要停止
 
-        # 文件预处理：解除保护、清除筛选器、删除排除的Sheet
+        # 文件预处理：复制输入并清理支持的 OOXML 筛选器
         log_func("正在预处理旧版本文件...")
         old_result = check_and_remove_file_protection(
             old_path, exclude_sheets, log_func, stop_flag=stop_flag, work_dir=work_dir
@@ -1640,19 +1640,6 @@ def process_edc_multithreaded(
             cleanup_nofilter_files(work_dir=work_dir)
         except Exception:
             pass
-
-    # 清理预处理阶段生成的临时文件和参数文件（静默，不写入日志）
-    try:
-        for temp_path in [current_old_path, current_new_path]:
-            if (
-                temp_path
-                and temp_path.endswith("_nofilter.xlsx")
-                and os.path.exists(temp_path)
-            ):
-                os.remove(temp_path)
-    except Exception:
-        pass
-
     try:
         parameters_file_path = os.path.join(work_dir, "parameters.json")
         if os.path.exists(parameters_file_path):

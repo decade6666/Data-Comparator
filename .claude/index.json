@@ -178,12 +178,13 @@
       "name": "infrastructure",
       "path": "src/backend/infrastructure",
       "document": "src/backend/infrastructure/CLAUDE.md",
-      "role": "Configuration persistence, Excel runtime file preparation, temporary directories, AutoFilter cleanup, and thread-safe progress.",
+      "role": "Configuration persistence, Excel runtime file preparation, temporary directories, byte-level OOXML AutoFilter cleanup, and thread-safe progress.",
       "entrypoints": [
         "src/backend/infrastructure/config_manager.py",
         "src/backend/infrastructure/parameter_repository.py",
         "src/backend/infrastructure/parameter_templates.py",
         "src/backend/infrastructure/file_runtime.py",
+        "src/backend/infrastructure/xlsx_filter_cleaner.py",
         "src/backend/infrastructure/progress_manager.py"
       ],
       "interfaces": [
@@ -191,6 +192,9 @@
         "JsonParameterRepository",
         "BUILTIN_TEMPLATES",
         "check_and_remove_file_protection",
+        "remove_filters",
+        "CleanupOptions",
+        "FilterCleanupResult",
         "validate_excel_file",
         "get_sheet_names",
         "ThreadSafeProgressManager"
@@ -198,13 +202,16 @@
       "tests": [
         "tests/test_parameter_repository.py",
         "tests/test_progress_manager.py",
-        "tests/test_processing_control.py"
+        "tests/test_processing_control.py",
+        "tests/test_file_runtime.py",
+        "tests/test_xlsx_filter_cleaner.py"
       ],
       "important_paths": [
         "src/backend/infrastructure/config_manager.py",
         "src/backend/infrastructure/parameter_repository.py",
         "src/backend/infrastructure/parameter_templates.py",
         "src/backend/infrastructure/file_runtime.py",
+        "src/backend/infrastructure/xlsx_filter_cleaner.py",
         "src/backend/infrastructure/progress_manager.py"
       ]
     },

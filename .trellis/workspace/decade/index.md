@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-08-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~249 | Active |
+| `journal-1.md` | ~282 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-08-20 | 重写 xlsx 筛选器清理 | `dea439d` | `worktree-xlsx-filter-cleaner` |
 | 7 | 2026-08-20 | 项目编辑：改名 + 导入模板覆盖参数 | `b298e58` | `main` |
 | 6 | 2026-08-20 | Web UI 六项优化部署 + 设置弹窗修复 + 默认端口 8888 对齐 | `a291a35`, `3e33e6e` | `main` |
 | 5 | 2026-08-19 | 用户隔离与认证 + 配置回收站（三期） | `25267ef`, `f50e3ad`, `f633682` | `main` |
