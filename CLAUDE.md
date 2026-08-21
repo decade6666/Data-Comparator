@@ -11,7 +11,7 @@ Data-Comparator 是一个面向 Excel 数据集版本差异分析的 Python 工�
 - `src/frontend`：Web API 层，对外暴露 FastAPI 接口。
 - `src/backend/application`：应用编排层，负责路径校验、输出路径生成、配置装配与调用领域比对流程。
 - `src/backend/domain`：领域层，负责 Excel Sheet 读取、锚点构造、差异识别、高亮写回、停止控制与结果容器。
-- `src/backend/infrastructure`：基础设施层，负责配置持久化、运行时临时目录、Excel 文件预处理、进度管理。
+- `src/backend/infrastructure`：基础设施层，负责配置持久化、运行时临时目录、Excel 文件预处理（含字节级 OOXML 筛选器清理）、进度管理。
 - `src/shared`：跨层类型契约与日志工具。
 - `tests`：pytest 单元、接口、导入烟测和中断传播测试。
 
@@ -49,7 +49,7 @@ graph TD
 | `src/backend/infrastructure` | 配置仓库、文件运行时、线程安全进度 | `JsonParameterRepository`, `ConfigManager`, `ThreadSafeProgressManager` | 参数仓库、进度管理测试 | [`src/backend/infrastructure/CLAUDE.md`](./src/backend/infrastructure/CLAUDE.md) |
 | `src/frontend` | FastAPI Web API 层 | `app`, `/health`, `/api/compare` | `tests/test_web_api.py` | [`src/frontend/CLAUDE.md`](./src/frontend/CLAUDE.md) |
 | `src/shared` | TypedDict 契约、日志 | `ParameterDocument`, `log` | `tests/test_log_utils.py`, import smoke | [`src/shared/CLAUDE.md`](./src/shared/CLAUDE.md) |
-| `tests` | pytest 测试资产 | `pytest` | 11 个测试文件覆盖应用层、API、基础设施、领域辅助 | [`tests/CLAUDE.md`](./tests/CLAUDE.md) |
+| `tests` | pytest 测试资产 | `pytest` | 覆盖应用层、API、基础设施、领域辅助、筛选器清理与导入烟测 | [`tests/CLAUDE.md`](./tests/CLAUDE.md) |
 
 ## 运行与开发
 
@@ -138,6 +138,7 @@ pytest --cov=src --cov-report=term-missing
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-20 | fix | xlsx 筛选器清理改用保留原始命名空间和 zip 顺序的字节级 OOXML 重写，移除 Linux 不可用的 pywin32/ElementTree 路径，补充表格筛选器、隐藏行和中断传播测试。 |
 | 2026-08-20 | feat | 项目列表新增「编辑」按钮：可修改项目名称（后端新增 `POST /api/configs/{name}/rename`），并可导入内置模板（TM/CIMS）覆盖项目参数（已上传文件引用保留）；新建/编辑复用同一弹窗。 |
 | 2026-08-19 | feat | 用户改为硬删除（替换停用）；管理员可批量复制/转移/删除用户配置；新增配置回收站（软删 + 恢复 + 彻底删除 + 自动清理策略完整复刻 CRF-Editor：年龄/容量规则、最短保留保护、预览、后台定时巡检）。 |
 | 2026-08-19 | feat | 管理员登录后直接显示用户管理界面（不再显示比对主界面，比对界面仅普通用户使用）；用户管理新增「改名」功能（`PUT /api/users/{user_id}`，改名后旧 token 失效）。 |

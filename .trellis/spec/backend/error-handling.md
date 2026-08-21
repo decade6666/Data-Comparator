@@ -92,19 +92,20 @@ except Exception as exc:
     log_func(f"处理失败: {str(exc)}")
 ```
 
-### 4. Use fallback paths for recoverable preprocessing
+### 4. Treat non-OOXML preprocessing inputs as recoverable
 
-`src/backend/infrastructure/file_runtime.py` tries the Windows automation path first when clearing filters, then falls back to a workbook-level cleanup path.
-The fallback is logged instead of silently ignored.
+The Linux runtime receives `.xlsx` through a byte-preserving OOXML cleaner. Legacy `.xls` files and other non-zip inputs cannot use that cleaner, but the comparison pipeline can continue with the untouched task-local copy. `InterruptedError` and filesystem write failures remain fatal control-flow signals.
 
 ```python
-except Exception as exc:
-    log_func(f"主要预处理失败: {str(exc)}，尝试回退方法")
-    try:
-        remove_auto_filters_from_xlsx(...)
-    except Exception as fallback_exc:
-        log_func(f"备用筛选器清除失败: {str(fallback_exc)}")
+try:
+    cleanup_result = remove_filters(copy_path, log_func=log_func, stop_flag=stop_flag)
+except InterruptedError:
+    raise
+except NotAnOoxmlPackageError as exc:
+    log_func(f"非 OOXML 包，跳过筛选器清理: {str(exc)}")
 ```
+
+The cleaner uses an atomic same-directory temporary zip only when a supported filter element is found. A failed write or replacement is not converted into a successful comparison because the caller must see environmental failures.
 
 ### 5. Return `None`/`False` for utility-level recoverable cases
 

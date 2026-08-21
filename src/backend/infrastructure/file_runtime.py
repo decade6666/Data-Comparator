@@ -1,32 +1,43 @@
 import datetime
 import os
 import shutil
-import xml.etree.ElementTree as ET
-import zipfile
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import appdirs
 import pandas as pd
 from openpyxl import load_workbook
 
+from ...shared.contracts import LogFunc
 from ...shared.log_utils import log
 from ..domain.processing_control import check_stop_frequently
+from .xlsx_filter_cleaner import (
+    FilterCleanupResult,
+    NotAnOoxmlPackageError,
+    remove_filters,
+)
 
-try:
-    import pythoncom
-    import win32com.client as win32
-except Exception:
-    win32 = None
-    pythoncom = None
+
+def _safe_log(log_func: Optional[LogFunc], message: str) -> None:
+    if not log_func:
+        return
+    try:
+        log_func(message)
+    except Exception:
+        pass
 
 
 def check_and_remove_file_protection(
     file_path: str,
     exclude_sheets: List[str],
-    log_func,
-    stop_flag=None,
+    log_func: Optional[LogFunc],
+    stop_flag: Optional[Any] = None,
     work_dir: Optional[str] = None,
-) -> Tuple[bool, bool, str, List[str]]:
+) -> Tuple[bool, bool, str, Optional[FilterCleanupResult]]:
+    """Copy an input file and clean supported OOXML filter state on the copy.
+
+    ``exclude_sheets`` remains in the signature for compatibility with existing
+    callers. Sheet selection is performed later by the comparison domain layer.
+    """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"文件不存在: {file_path}")
 
@@ -38,163 +49,63 @@ def check_and_remove_file_protection(
     new_file_path = os.path.join(temp_app_dir, new_file_name)
 
     try:
+        os.makedirs(temp_app_dir, exist_ok=True)
         shutil.copy2(file_path, new_file_path)
         check_stop_frequently(log_func, stop_flag)
     except InterruptedError:
+        _cleanup_temp_copy(new_file_path, log_func)
         raise
-    except Exception as e:
-        log_func(f"❌ 创建副本失败: {str(e)}")
+    except Exception as exc:
+        _cleanup_temp_copy(new_file_path, log_func)
+        _safe_log(log_func, f"❌ 创建副本失败: {str(exc)}")
         raise
 
-    zone_id_stream = f"{file_path}:Zone.Identifier"
-    is_protected = False
-    protection_removed = False
-
+    cleanup_result: Optional[FilterCleanupResult] = None
     try:
-        if os.path.exists(zone_id_stream):
-            with open(zone_id_stream, "r") as f:
-                content = f.read()
-            is_protected = "[ZoneTransfer]" in content and "ZoneId=3" in content
-        else:
-            is_protected = False
-    except Exception:
-        is_protected = True
-
-    if is_protected:
-        try:
-            os.remove(zone_id_stream)
-            protection_removed = True
-        except Exception as e:
-            protection_removed = False
-            log_func(f"⚠️ 解除文件保护失败: {str(e)}")
-    else:
-        log_func("ℹ️ 文件未受保护，继续处理...")
-
-    actually_removed: List[str] = []
-
-    try:
-        if win32 is None:
-            raise ImportError("pywin32 未安装或不可用")
-
-        try:
-            pythoncom.CoInitialize()
-        except Exception:
-            pass
-
-        excel_app = None
-        wb_com = None
-        filters_cleared_by_pywin32 = False
-        created_standalone_app = False
-        try:
-            dispatch_method = getattr(win32, "DispatchEx", None)
-            if dispatch_method is not None:
-                excel_app = dispatch_method("Excel.Application")
-                created_standalone_app = True
-            else:
-                excel_app = win32.Dispatch("Excel.Application")
-            excel_app.Visible = False
-            excel_app.DisplayAlerts = False
-
-            check_stop_frequently(log_func, stop_flag)
-
-            wb_com = excel_app.Workbooks.Open(
-                new_file_path, UpdateLinks=0, ReadOnly=False
-            )
-            for ws_com in wb_com.Worksheets:
-                try:
-                    check_stop_frequently(log_func, stop_flag)
-                except Exception:
-                    if wb_com is not None:
-                        wb_com.Close(SaveChanges=False)
-                    if excel_app is not None and created_standalone_app:
-                        excel_app.Quit()
-                    raise
-
-                try:
-                    if getattr(ws_com, "FilterMode", False):
-                        try:
-                            ws_com.ShowAllData()
-                        except Exception:
-                            try:
-                                ws_com.AutoFilter.ShowAllData()
-                            except Exception:
-                                pass
-                        filters_cleared_by_pywin32 = True
-                except Exception:
-                    pass
-
-                try:
-                    if getattr(ws_com, "AutoFilterMode", False):
-                        ws_com.AutoFilterMode = False
-                        filters_cleared_by_pywin32 = True
-                except Exception:
-                    pass
-
-                try:
-                    list_objects = getattr(ws_com, "ListObjects", None)
-                    if list_objects is not None:
-                        for lo in list_objects:
-                            try:
-                                if (
-                                    getattr(lo, "ShowAutoFilter", None) is not None
-                                    and lo.ShowAutoFilter
-                                ):
-                                    lo.ShowAutoFilter = False
-                                    filters_cleared_by_pywin32 = True
-                                try:
-                                    lo.AutoFilter.ShowAllData()
-                                except Exception:
-                                    pass
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-
-            wb_com.Save()
-        finally:
-            try:
-                if wb_com is not None:
-                    wb_com.Close(SaveChanges=False)
-            except Exception:
-                pass
-            try:
-                if excel_app is not None and created_standalone_app:
-                    excel_app.Quit()
-            except Exception:
-                pass
-            try:
-                pythoncom.CoUninitialize()
-            except Exception:
-                pass
-
-        if filters_cleared_by_pywin32:
-            log_func("✅ 成功通过pywin32清除自动筛选器。")
-        else:
-            log_func("ℹ️ 文件中未发现自动筛选器，跳过清除。")
-    except InterruptedError:
-        raise
-    except Exception as e:
-        log_func(
-            f"⚠️ 主要预处理（pywin32清除筛选器或删除Sheet）失败: {str(e)}，尝试回退方法..."
+        cleanup_result = remove_filters(
+            new_file_path,
+            log_func=log_func,
+            stop_flag=stop_flag,
         )
-        try:
-            remove_auto_filters_from_xlsx(
-                new_file_path,
-                new_file_path,
+    except InterruptedError:
+        _cleanup_temp_copy(new_file_path, log_func)
+        raise
+    except NotAnOoxmlPackageError as exc:
+        _safe_log(log_func, f"ℹ️ 非 OOXML 包（.xls 等），跳过筛选器清理: {str(exc)}")
+    except Exception:
+        _cleanup_temp_copy(new_file_path, log_func)
+        raise
+    else:
+        if cleanup_result.rewritten:
+            _safe_log(
                 log_func,
-                stop_flag=stop_flag,
-                work_dir=temp_app_dir,
+                "✅ 已清除筛选器：工作表 "
+                f"{cleanup_result.sheet_autofilters_removed} 处、表格 "
+                f"{cleanup_result.table_autofilters_removed} 处，恢复隐藏行 "
+                f"{cleanup_result.hidden_rows_restored} 行",
             )
-            log_func("✅ 成功通过备用方法清除自动筛选器。")
-        except InterruptedError:
-            raise
-        except Exception as fallback_e:
-            log_func(f"❌ 备用筛选器清除失败，跳过继续处理: {str(fallback_e)}")
+        else:
+            _safe_log(
+                log_func,
+                "ℹ️ 未发现自动筛选器，跳过重写 "
+                f"（扫描 {cleanup_result.parts_scanned} 个部件）",
+            )
 
-    return is_protected, protection_removed, new_file_path, actually_removed
+    return False, False, new_file_path, cleanup_result
 
 
-def validate_excel_file(file_path: str, log_func) -> Tuple[bool, Optional[str]]:
+def _cleanup_temp_copy(path: str, log_func: Optional[LogFunc]) -> None:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError as exc:
+        _safe_log(log_func, f"⚠️ 中断后清理临时副本失败: {str(exc)}")
+
+
+def validate_excel_file(
+    file_path: str,
+    log_func,
+) -> Tuple[bool, Optional[str]]:
     try:
         if not os.path.exists(file_path):
             error = f"文件不存在: {file_path}"
@@ -286,7 +197,10 @@ def get_app_temp_dir() -> str:
     return temp_sub_dir
 
 
-def cleanup_nofilter_files(log_func=None, work_dir: Optional[str] = None) -> int:
+def cleanup_nofilter_files(
+    log_func=None,
+    work_dir: Optional[str] = None,
+) -> int:
     """清理指定工作目录下的临时副本；缺省时清理全局临时目录。
 
     work_dir 用于按任务隔离清理，避免并发任务互删中间文件。
@@ -297,7 +211,9 @@ def cleanup_nofilter_files(log_func=None, work_dir: Optional[str] = None) -> int
         if not os.path.isdir(temp_dir):
             return 0
         for name in os.listdir(temp_dir):
-            if "_nofilter_" in name and name.lower().endswith((".xlsx", ".xlsm")):
+            if "_nofilter_" in name and name.lower().endswith(
+                (".xlsx", ".xlsm", ".xls")
+            ):
                 fpath = os.path.join(temp_dir, name)
                 try:
                     if os.path.isfile(fpath):
@@ -312,50 +228,3 @@ def cleanup_nofilter_files(log_func=None, work_dir: Optional[str] = None) -> int
         if log_func:
             log_func(f"⚠️ 清理临时缓存文件时出错: {e}")
     return removed_count
-
-
-def remove_auto_filters_from_xlsx(
-    file_path: str,
-    output_path: Optional[str] = None,
-    log_message=None,
-    stop_flag=None,
-    work_dir: Optional[str] = None,
-) -> None:
-    output_path = output_path or file_path.replace(".xlsx", ".xlsx")
-
-    temp_app_dir = work_dir or get_app_temp_dir()
-    unique_temp_id = os.urandom(8).hex()
-    tmpdirname = os.path.join(temp_app_dir, f"excel_extract_{unique_temp_id}")
-    os.makedirs(tmpdirname, exist_ok=True)
-
-    try:
-        with zipfile.ZipFile(file_path, "r") as zip_ref:
-            zip_ref.extractall(tmpdirname)
-        check_stop_frequently(log_message, stop_flag)
-
-        sheet_dir = os.path.join(tmpdirname, "xl", "worksheets")
-        for filename in os.listdir(sheet_dir):
-            check_stop_frequently(log_message, stop_flag)
-            if filename.startswith("sheet") and filename.endswith(".xml"):
-                sheet_path = os.path.join(sheet_dir, filename)
-                tree = ET.parse(sheet_path)
-                root = tree.getroot()
-                ns = {
-                    "main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-                }
-                auto_filter = root.find("main:autoFilter", ns)
-                if auto_filter is not None:
-                    root.remove(auto_filter)
-                    tree.write(sheet_path, encoding="utf-8", xml_declaration=True)
-
-        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as new_zip:
-            for foldername, subfolders, filenames in os.walk(tmpdirname):
-                check_stop_frequently(log_message, stop_flag)
-                for filename in filenames:
-                    check_stop_frequently(log_message, stop_flag)
-                    file_path_inner = os.path.join(foldername, filename)
-                    arcname = os.path.relpath(file_path_inner, tmpdirname)
-                    new_zip.write(file_path_inner, arcname)
-    finally:
-        if os.path.exists(tmpdirname):
-            shutil.rmtree(tmpdirname)

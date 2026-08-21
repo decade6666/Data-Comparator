@@ -60,7 +60,9 @@ def test_update_progress_delegates_to_callback() -> None:
     updates = []
 
     update_progress(
-        "处理中", 50, progress_func=lambda msg, value: updates.append((msg, value))
+        "处理中",
+        50,
+        progress_func=lambda msg, value: updates.append((msg, value)),
     )
 
     assert updates == [("处理中", 50)]
@@ -84,8 +86,12 @@ def test_update_progress_propagates_interrupted_error() -> None:
 
 
 def test_read_single_sheet_propagates_interrupted_error(monkeypatch) -> None:
-    fake_pandas = types.SimpleNamespace(DataFrame=lambda *args, **kwargs: object())
-    fake_openpyxl = types.SimpleNamespace(load_workbook=lambda *args, **kwargs: None)
+    fake_pandas = types.SimpleNamespace(
+        DataFrame=lambda *args, **kwargs: object(),
+    )
+    fake_openpyxl = types.SimpleNamespace(
+        load_workbook=lambda *args, **kwargs: None,
+    )
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
     monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
     sys.modules.pop("src.backend.domain.excel_header_utils", None)
@@ -118,7 +124,12 @@ def test_read_single_sheet_propagates_interrupted_error(monkeypatch) -> None:
 
     with pytest.raises(InterruptedError, match="用户停止了操作"):
         excel_header_utils.read_single_sheet_from_excel(
-            "file.xlsx", "Sheet1", 1, 1, lambda _message: None, stop_flag=stop_flag
+            "file.xlsx",
+            "Sheet1",
+            1,
+            1,
+            lambda _message: None,
+            stop_flag=stop_flag,
         )
 
     assert closed == [True]
@@ -126,8 +137,12 @@ def test_read_single_sheet_propagates_interrupted_error(monkeypatch) -> None:
 
 def test_read_single_sheet_passes_unset_flag(monkeypatch) -> None:
     """未触发停止标志时，显式传入的 stop_flag 不应抛异常。"""
-    fake_pandas = types.SimpleNamespace(DataFrame=lambda *args, **kwargs: object())
-    fake_openpyxl = types.SimpleNamespace(load_workbook=lambda *args, **kwargs: None)
+    fake_pandas = types.SimpleNamespace(
+        DataFrame=lambda *args, **kwargs: object(),
+    )
+    fake_openpyxl = types.SimpleNamespace(
+        load_workbook=lambda *args, **kwargs: None,
+    )
     monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
     monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
     sys.modules.pop("src.backend.domain.excel_header_utils", None)
@@ -146,58 +161,64 @@ def test_read_single_sheet_passes_unset_flag(monkeypatch) -> None:
     )
 
     excel_header_utils.read_single_sheet_from_excel(
-        "file.xlsx", "Sheet1", 1, 1, lambda _message: None, stop_flag=threading.Event()
+        "file.xlsx",
+        "Sheet1",
+        1,
+        1,
+        lambda _message: None,
+        stop_flag=threading.Event(),
     )
 
 
 def test_file_runtime_propagates_interrupted_error_without_fallback(
     monkeypatch, tmp_path
 ) -> None:
-    fake_appdirs = types.SimpleNamespace(user_data_dir=lambda *args: str(tmp_path))
-    fake_pandas = types.SimpleNamespace(read_excel=lambda *args, **kwargs: None)
-    fake_openpyxl = types.SimpleNamespace(load_workbook=lambda *args, **kwargs: None)
-    monkeypatch.setitem(sys.modules, "appdirs", fake_appdirs)
-    monkeypatch.setitem(sys.modules, "pandas", fake_pandas)
-    monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
-    sys.modules.pop("src.backend.infrastructure.file_runtime", None)
-    file_runtime = importlib.import_module("src.backend.infrastructure.file_runtime")
+    from src.backend.infrastructure import file_runtime
 
     source_file = tmp_path / "source.xlsx"
     source_file.write_bytes(b"content")
-    fallback_calls = []
+    messages = []
 
-    class FakePythonCom:
-        def CoInitialize(self):
-            pass
+    def stop_during_cleanup(*_args, **_kwargs):
+        raise InterruptedError("用户停止了操作")
 
-        def CoUninitialize(self):
-            pass
-
-    class FakeWin32:
-        def DispatchEx(self, _name):
-            raise InterruptedError("用户停止了操作")
-
-    monkeypatch.setattr(file_runtime, "get_app_temp_dir", lambda: str(tmp_path))
-    monkeypatch.setattr(file_runtime, "pythoncom", FakePythonCom())
-    monkeypatch.setattr(file_runtime, "win32", FakeWin32())
-    monkeypatch.setattr(
-        file_runtime,
-        "remove_auto_filters_from_xlsx",
-        lambda *args, **kwargs: fallback_calls.append(args),
-    )
-
-    stop_flag = threading.Event()
-    stop_flag.set()
+    monkeypatch.setattr(file_runtime, "remove_filters", stop_during_cleanup)
 
     with pytest.raises(InterruptedError, match="用户停止了操作"):
         file_runtime.check_and_remove_file_protection(
-            str(source_file), [], lambda _message: None, stop_flag=stop_flag
+            str(source_file), [], messages.append, work_dir=str(tmp_path)
         )
 
-    assert fallback_calls == []
+    assert not any("回退" in message or "备用" in message for message in messages)
+    assert list(tmp_path.glob("source_nofilter_*.xlsx")) == []
 
 
-def test_perform_full_comparison_propagates_interrupted_error(monkeypatch) -> None:
+def test_file_runtime_skips_non_ooxml_input_on_copy(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from src.backend.infrastructure import file_runtime
+
+    source_file = tmp_path / "legacy.xls"
+    source_file.write_bytes(b"legacy workbook")
+    messages = []
+
+    result = file_runtime.check_and_remove_file_protection(
+        str(source_file), [], messages.append, work_dir=str(tmp_path)
+    )
+
+    assert result[:2] == (False, False)
+    assert result[3] is None
+    copied_path = result[2]
+    assert copied_path != str(source_file)
+    with open(copied_path, "rb") as copied_file:
+        assert copied_file.read() == source_file.read_bytes()
+    assert any("非 OOXML 包" in message for message in messages)
+
+
+def test_perform_full_comparison_propagates_interrupted_error(
+    monkeypatch,
+) -> None:
     fake_pandas = types.ModuleType("pandas")
 
     class FakeInputDataFrame:
@@ -251,9 +272,17 @@ def test_perform_full_comparison_propagates_interrupted_error(monkeypatch) -> No
     monkeypatch.setitem(sys.modules, "openpyxl", fake_openpyxl)
     monkeypatch.setitem(sys.modules, "openpyxl.styles", fake_styles)
     monkeypatch.setitem(sys.modules, "openpyxl.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "openpyxl.utils.dataframe", fake_dataframe_utils)
+    monkeypatch.setitem(
+        sys.modules,
+        "openpyxl.utils.dataframe",
+        fake_dataframe_utils,
+    )
     monkeypatch.setitem(sys.modules, "openpyxl.worksheet", fake_worksheet_pkg)
-    monkeypatch.setitem(sys.modules, "openpyxl.worksheet.worksheet", fake_worksheet)
+    monkeypatch.setitem(
+        sys.modules,
+        "openpyxl.worksheet.worksheet",
+        fake_worksheet,
+    )
     monkeypatch.setitem(sys.modules, "openpyxl.worksheet.table", fake_table)
     monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
 
@@ -266,7 +295,9 @@ def test_perform_full_comparison_propagates_interrupted_error(monkeypatch) -> No
     ):
         sys.modules.pop(module_name, None)
 
-    data_comparison = importlib.import_module("src.backend.domain.data_comparison")
+    data_comparison = importlib.import_module(
+        "src.backend.domain.data_comparison",
+    )
     monkeypatch.setattr(
         data_comparison, "create_anchor_by_sas_names", lambda *args: args[0]
     )

@@ -69,7 +69,7 @@ Web/API 通过 `run_comparison` 调用后端；应用层完成路径校验、配
 
 ### 文件运行时问题归哪层处理？
 
-Excel 文件保护、Sheet 名读取、临时文件、AutoFilter 清理属于 `backend/infrastructure/file_runtime.py`。
+Excel 文件预处理、Sheet 名读取和临时文件属于 `backend/infrastructure/file_runtime.py`；OOXML AutoFilter 字节清理属于 `backend/infrastructure/xlsx_filter_cleaner.py`。
 
 ## 相关文件清单
 

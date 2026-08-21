@@ -69,6 +69,8 @@ pytest 配置摘要：
 - `test_parameter_repository.py`：JSON 配置保存、加载、列表、删除、内置模板和非法文档。
 - `test_progress_manager.py`：线程安全进度、最终进度、回调失败日志。
 - `test_processing_control.py`：停止标志、节流、中断传播、workbook 关闭。
+- `test_file_runtime.py`：副本预处理、Excel 验证、Sheet 名回退和 nofilter 临时文件清理。
+- `test_xlsx_filter_cleaner.py`：OOXML 筛选器字节清理、命名空间保真、zip 往返、原子替换和错误语义。
 - `test_highlight_optimizer.py`：高亮缓存、空行判断、失败日志和 changed cells。
 - `test_sheet_process_result.py`：Sheet 结果默认字段。
 - `test_log_utils.py`：日志打印、回调和 console encoding fallback。
@@ -93,6 +95,8 @@ pytest 配置摘要：
 - `test_parameter_repository.py`
 - `test_progress_manager.py`
 - `test_processing_control.py`
+- `test_file_runtime.py`
+- `test_xlsx_filter_cleaner.py`
 - `test_highlight_optimizer.py`
 - `test_sheet_process_result.py`
 - `test_log_utils.py`
@@ -102,5 +106,6 @@ pytest 配置摘要：
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-20 | test | 新增 file_runtime 和字节级 OOXML 筛选器清理分支测试。 |
 | 2026-08-18 | feat | 新增任务管理、任务/上传/浏览/Sheet/配置 API、路径安全测试文件。 |
 | 2026-05-24T03:25:49 | docs | 初始化 `tests` 模块 Claude 指南。 |

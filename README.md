@@ -12,7 +12,7 @@
 - 忽略比对字段：`ignore_cols` / `sheet_ignore_cols` 指定的字段照常输出，但其变化不计入差异
 - 输出表单顺序：`sheet_order` 按指定顺序排列输出文件中的表单
 - 大文件与多线程优化：可配置最大线程数，内置条件 GC 与内存峰值保护
-- Excel 预处理：自动清理筛选器、可选择排除指定 Sheet，处理“受保护的来源”标记
+- Excel 预处理：在任务副本上以字节级 OOXML 方式清理 worksheet/table 筛选器并恢复筛选隐藏行；非 `.xlsx/.xlsm` OOXML 输入跳过该清理
 - 配置管理：JSON 配置持久化与内置模板（CIMS/TM），保存在用户数据目录下
 - 过程可停止：支持随时停止任务，保证 API 调用可响应
 - Web/API 入口：提供 FastAPI 服务，可在 Linux 环境通过外部 Web 访问触发比对
@@ -288,7 +288,7 @@ Web UI 基于异步任务接口实现进度显示与停止：
 - 表单排列顺序：默认按源文件顺序（新文件为主，旧文件独有表单追加在后）；配置 `sheet_order` 后按指定顺序；仅配置 `include_sheets` 时按列表内顺序
 
 ## 常见问题
-- xls 旧格式：建议另存为 .xlsx 再处理；`xlrd` 不再支持 .xlsx
+- xls 旧格式：建议另存为 .xlsx 再处理；筛选器清理仅适用于 OOXML zip 格式
 - 表头/锚点行不正确导致列名重复：请调整 anchor_row_num/header_row_num 参数，避免 `SASFieldName` 重复
-- 来自互联网的受保护 Excel 无法读取：程序会尝试移除 Zone.Identifier；若失败，请手动解除文件阻止
+- xlsx 筛选器清理对来自互联网的 Zone.Identifier 不做平台相关修改；程序会在任务副本上完成 OOXML 筛选器清理，原始文件保持不变
 - 大文件内存压力：适当降低线程数、关闭非必要的应用、预留磁盘空间
