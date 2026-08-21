@@ -247,3 +247,36 @@ JWT 认证与按用户数据隔离；管理员用户管理视图（改名/硬删
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 重写 xlsx 筛选器清理
+
+**Date**: 2026-08-20
+**Task**: 重写 xlsx 筛选器清理
+**Branch**: `worktree-xlsx-filter-cleaner`
+
+### Summary
+
+移除 Linux 不可用的 pywin32 和会破坏命名空间的 ElementTree 重打包路径，新增保留 XML/ZIP 元数据的字节级筛选器清理；242 项测试通过，总覆盖率 81%，新增清理模块 98%。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dea439d` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
