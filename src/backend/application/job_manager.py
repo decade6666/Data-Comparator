@@ -20,8 +20,10 @@ from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ...shared.contracts import ParameterDocument
+from ...shared.log_utils import log
 from ..infrastructure.file_runtime import get_user_data_dir
 from .comparison_runner import run_comparison
+from .processing_service import build_log_path, write_log_file
 
 DEFAULT_RETENTION_MINUTES = 30
 DEFAULT_MAX_JOBS = 20
@@ -49,6 +51,8 @@ _TERMINAL_STATUSES = frozenset(
     {JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED}
 )
 
+JobFinishedHook = Callable[["JobState"], None]
+
 
 @dataclass
 class JobState:
@@ -65,9 +69,11 @@ class JobState:
     progress_message: Optional[str] = None
     log_lines: List[str] = field(default_factory=list)
     output_path: Optional[str] = None
+    log_path: Optional[str] = None
     error: Optional[str] = None
     started_at: Optional[datetime.datetime] = None
     finished_at: Optional[datetime.datetime] = None
+    finalized_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -81,6 +87,7 @@ class JobManager:
         sweep_interval_seconds: int = DEFAULT_SWEEP_INTERVAL_SECONDS,
         now: Callable[[], datetime.datetime] = datetime.datetime.now,
         max_concurrent_jobs: Optional[int] = None,
+        on_finished: Optional["JobFinishedHook"] = None,
     ) -> None:
         self._retention_minutes = retention_minutes
         self._max_jobs = max_jobs
@@ -94,6 +101,7 @@ class JobManager:
             max_concurrent_jobs = get_max_concurrent_jobs()
         self._max_concurrent_jobs = max(1, max_concurrent_jobs)
         self._semaphore = threading.Semaphore(self._max_concurrent_jobs)
+        self._finished_hook = on_finished
 
     def has_active_job(self) -> bool:
         with self._lock:
@@ -108,8 +116,18 @@ class JobManager:
         限制，超限任务保持 pending 排队。
         """
         with self._lock:
-            if user_id in self._user_active:
-                raise ValueError("已有比对任务正在运行，请等待完成或取消后再提交")
+            active_job_id = self._user_active.get(user_id)
+            if active_job_id:
+                active_job = self._jobs.get(active_job_id)
+                # 终态任务在 finalize 清理映射前存在一个很短的窗口；
+                # 必须等历史 hook 完成，避免硬删用户与落库并发。
+                if active_job is None or (
+                    active_job.status in _TERMINAL_STATUSES
+                    and active_job.finalized_event.is_set()
+                ):
+                    del self._user_active[user_id]
+                else:
+                    raise ValueError("已有比对任务正在运行，请等待完成或取消后再提交")
             job = JobState(
                 job_id=uuid.uuid4().hex[:16],
                 status=JobStatus.PENDING,
@@ -177,8 +195,9 @@ class JobManager:
         for job in targets:
             while time.monotonic() < deadline:
                 with job.lock:
-                    if job.status in _TERMINAL_STATUSES:
-                        break
+                    terminal = job.status in _TERMINAL_STATUSES
+                if terminal and job.finalized_event.is_set():
+                    break
                 time.sleep(0.02)
         return len(targets)
 
@@ -276,17 +295,49 @@ class JobManager:
         finally:
             self._semaphore.release()
 
+    def set_finished_hook(self, hook: Optional[JobFinishedHook]) -> None:
+        """注册任务结束回调（历史记录落库等），在任务锁外触发。"""
+        self._finished_hook = hook
+
     def _run_with_semaphore(self, job_id: str) -> None:
         job = self._jobs.get(job_id)
         if job is None:
             return
-        if job.stop_flag.is_set():
-            self._finish(job, JobStatus.CANCELLED, error="用户停止了操作")
-            return
-        with job.lock:
-            job.status = JobStatus.RUNNING
-            job.started_at = self._now()
+        run_started = self._now()
+        work_dir: Optional[str] = None
+        try:
+            if job.stop_flag.is_set():
+                # 排队期间被取消：无日志、无产出文件，直接以 cancelled 收尾。
+                self._finish(job, JobStatus.CANCELLED, error="用户停止了操作")
+            else:
+                with job.lock:
+                    job.status = JobStatus.RUNNING
+                    job.started_at = run_started
+                work_dir = os.path.join(
+                    get_user_data_dir(job.user_id), "temp", job.job_id
+                )
+                os.makedirs(work_dir, exist_ok=True)
+                output_path = run_comparison(
+                    job.parameters,
+                    config_name=job.config_name,
+                    log_func=self._build_log_func(job),
+                    progress_func=self._build_progress_func(job),
+                    stop_flag=job.stop_flag,
+                    work_dir=work_dir,
+                    now=run_started,
+                )
+                with job.lock:
+                    job.status = JobStatus.COMPLETED
+                    job.output_path = output_path
+                    job.finished_at = self._now()
+        except InterruptedError as exc:
+            self._finish(job, JobStatus.CANCELLED, error=str(exc))
+        except Exception as exc:  # noqa: BLE001 - 失败信息要落到任务状态
+            self._finish(job, JobStatus.FAILED, error="比对处理失败: {}".format(exc))
+        finally:
+            self._finalize_job(job, job_id, run_started, work_dir)
 
+    def _build_progress_func(self, job: JobState) -> Callable[..., None]:
         def job_progress_func(message: str, percent: Optional[int] = None) -> None:
             with job.lock:
                 if percent is not None:
@@ -294,43 +345,69 @@ class JobManager:
                 if message:
                     job.progress_message = message
 
+        return job_progress_func
+
+    def _build_log_func(self, job: JobState) -> Callable[[str], None]:
         def job_log_func(message: str) -> None:
             # 领域层通过 shared.log() 输出时已经打印过一次，这里只负责归档，
             # 避免与既有 stdout 行为叠加成重复输出。
             with job.lock:
                 job.log_lines.append(message)
 
-        work_dir = os.path.join(get_user_data_dir(job.user_id), "temp", job.job_id)
-        try:
-            os.makedirs(work_dir, exist_ok=True)
-            output_path = run_comparison(
-                job.parameters,
-                config_name=job.config_name,
-                log_func=job_log_func,
-                progress_func=job_progress_func,
-                stop_flag=job.stop_flag,
-                work_dir=work_dir,
-            )
-        except InterruptedError as exc:
-            self._finish(job, JobStatus.CANCELLED, error=str(exc))
-        except Exception as exc:  # noqa: BLE001 - 失败信息要落到任务状态
-            self._finish(job, JobStatus.FAILED, error="比对处理失败: {}".format(exc))
-        else:
-            with job.lock:
-                job.status = JobStatus.COMPLETED
-                job.output_path = output_path
-                job.finished_at = self._now()
-        finally:
+        return job_log_func
+
+    def _finalize_job(
+        self,
+        job: JobState,
+        job_id: str,
+        run_started: datetime.datetime,
+        work_dir: Optional[str],
+    ) -> None:
+        self._persist_job_log(job, run_started)
+        if work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
-            with self._lock:
-                if self._user_active.get(job.user_id) == job_id:
-                    del self._user_active[job.user_id]
+        # 必须在 finally 清理完成后触发：排队取消也要进入历史记录。
+        self._notify_finished(job)
+        job.finalized_event.set()
+        with self._lock:
+            if self._user_active.get(job.user_id) == job_id:
+                del self._user_active[job.user_id]
+
+    def _persist_job_log(self, job: JobState, run_started: datetime.datetime) -> None:
+        with job.lock:
+            if job.status not in _TERMINAL_STATUSES:
+                return
+            lines = list(job.log_lines)
+            output_directory = job.parameters.get("output_directory", "")
+        try:
+            log_path = write_log_file(
+                build_log_path(job.config_name, output_directory, now=run_started),
+                lines,
+            )
+        except Exception as exc:  # noqa: BLE001 - 日志失败不得阻断任务清理
+            log("写入日志文件失败: {}".format(exc), None)
+            log_path = None
+        with job.lock:
+            job.log_path = log_path
 
     def _finish(self, job: JobState, status: JobStatus, error: str) -> None:
         with job.lock:
             job.status = status
             job.error = error
             job.finished_at = self._now()
+            if error and (not job.log_lines or job.log_lines[-1] != error):
+                # 即使路径校验在领域日志初始化前失败，落盘日志也要包含可诊断信息。
+                job.log_lines.append(error)
+
+    def _notify_finished(self, job: JobState) -> None:
+        """任务锁外触发结束回调；记录失败不改变任务状态，仅记日志。"""
+        hook = self._finished_hook
+        if hook is None:
+            return
+        try:
+            hook(job)
+        except Exception as exc:  # noqa: BLE001 - 历史记录失败不得翻转任务状态
+            log("记录比对历史失败: {}".format(exc), None)
 
 
 _instance_lock = threading.Lock()

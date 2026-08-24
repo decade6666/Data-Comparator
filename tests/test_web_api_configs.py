@@ -156,3 +156,52 @@ def test_import_invalid_json(auth_client) -> None:
         files={"file": ("bad.json", b"not-json{", "application/json")},
     )
     assert response.status_code == 400
+
+
+def test_rename_migrates_history_and_copy_does_not(
+    auth_client, tmp_path, monkeypatch
+) -> None:
+    """改名后历史行跟随新项目名；复制不迁移（副本无历史）。"""
+    from src.backend.infrastructure import database
+    from src.backend.infrastructure.database import init_db, session_context
+    from src.backend.infrastructure.models.comparison_run import ComparisonRun
+
+    monkeypatch.setenv("DATASET_COMPARATOR_DATA_DIR", str(tmp_path / "app-data"))
+    database._engine = None
+    init_db()
+    try:
+        auth_client.put("/api/configs/旧项目", json={"anchor_row_num": 2})
+        with session_context() as session:
+            session.add(
+                ComparisonRun(
+                    user_id=1,
+                    job_id="r1",
+                    config_name="旧项目",
+                    status="completed",
+                    report_filename=None,
+                    log_filename=None,
+                    report_size_bytes=0,
+                    parameters_json="{}",
+                    finished_at=__import__("datetime").datetime(2026, 8, 23, 12, 0, 0),
+                )
+            )
+            session.commit()
+
+        resp = auth_client.post(
+            "/api/configs/旧项目/rename", json={"new_name": "新项目"}
+        )
+        assert resp.status_code == 200
+
+        with session_context() as session:
+            rows = session.query(ComparisonRun).filter_by(user_id=1).all()
+            assert all(r.config_name == "新项目" for r in rows)
+
+        # 复制不迁移：新建「旧项目」副本不产生新历史
+        auth_client.put("/api/configs/旧项目", json={"anchor_row_num": 2})
+        auth_client.post("/api/configs/旧项目/copy", json={"new_name": "副本项目"})
+        with session_context() as session:
+            rows = session.query(ComparisonRun).filter_by(user_id=1).all()
+            assert len(rows) == 1
+            assert rows[0].config_name == "新项目"
+    finally:
+        database._engine = None

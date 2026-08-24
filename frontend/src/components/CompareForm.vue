@@ -1,7 +1,5 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { saveConfigWithPrompt, revertConfig } from '../composables/useConfigState'
 import { useSheets } from '../composables/useSheets'
 import { parameterDescription } from '../constants/parameterDescriptions'
 import PathSelector from './PathSelector.vue'
@@ -49,20 +47,6 @@ function cardValue(card) {
     }
   }
   return props.config[card.key]
-}
-
-async function saveParameters() {
-  try {
-    const name = await saveConfigWithPrompt()
-    if (name) ElMessage.success(`已保存：${name}`)
-  } catch (err) {
-    ElMessage.error(err.message)
-  }
-}
-
-function cancelSave() {
-  revertConfig()
-  ElMessage.success('已撤销未保存的修改')
 }
 
 function patch(key, value) {
@@ -154,12 +138,6 @@ watch(
         :description="parameterDescription(card.key)"
         @edit="editing = card"
       />
-    </div>
-    <div class="panel-footer config-save-footer">
-      <el-button size="small" @click="cancelSave">取消保存</el-button>
-      <el-button size="small" type="primary" @click="saveParameters">
-        保存项目
-      </el-button>
     </div>
   </div>
 

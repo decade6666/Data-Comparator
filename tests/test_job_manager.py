@@ -17,6 +17,12 @@ MINIMAL_PARAMS: ParameterDocument = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _isolate_output_dir(tmp_path, monkeypatch):
+    """日志落盘按 output_directory 写文件，指向 tmp_path 避免污染真实目录。"""
+    monkeypatch.setitem(MINIMAL_PARAMS, "output_directory", str(tmp_path))
+
+
 def _wait_for_terminal(job, timeout: float = 10.0) -> JobStatus:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -44,6 +50,7 @@ def test_submit_runs_and_completes(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         release.wait(10)
         progress_func("开始处理表单", 20)
@@ -80,6 +87,7 @@ def test_progress_func_writes_partial_updates(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         for percent in (20, 45, 85, 100):
             progress_func(f"进度 {percent}", percent)
@@ -107,6 +115,7 @@ def test_log_lines_respect_since_cursor(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         log_func("line1")
         log_func("line2")
@@ -140,6 +149,7 @@ def test_cancel_sets_stop_flag_and_marks_cancelled(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         flag_holder["flag"] = stop_flag
         started.set()
@@ -169,6 +179,7 @@ def test_cancel_terminal_job_is_noop(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         return "/tmp/out/report.xlsx"
 
@@ -194,6 +205,7 @@ def test_concurrent_submit_rejected(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         started.set()
         release.wait(10)
@@ -223,6 +235,7 @@ def test_failed_job_records_error(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         raise RuntimeError("保存文件失败")
 
@@ -236,6 +249,8 @@ def test_failed_job_records_error(monkeypatch) -> None:
     assert snapshot["status"] == "failed"
     assert snapshot["error"] == "比对处理失败: 保存文件失败"
     assert snapshot["output_path"] is None
+    assert job.log_lines[-1] == "比对处理失败: 保存文件失败"
+    assert job.log_path is not None
     manager.stop()
 
 
@@ -249,6 +264,7 @@ def test_cleanup_removes_expired_jobs(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         return "/tmp/out/report.xlsx"
 
@@ -277,6 +293,7 @@ def test_cleanup_caps_total_jobs(monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         return "/tmp/out/report.xlsx"
 
@@ -292,4 +309,161 @@ def test_cleanup_caps_total_jobs(monkeypatch) -> None:
     assert manager.cleanup() == 1
     remaining = [manager.get_job(job_id) for job_id in job_ids]
     assert sum(1 for item in remaining if item is not None) == 2
+    manager.stop()
+
+
+def test_on_finished_hook_fires_once_for_completed(monkeypatch) -> None:
+    calls = []
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        log_func("line1")
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+    manager = JobManager(on_finished=lambda job: calls.append(job))
+
+    job = manager.submit(MINIMAL_PARAMS)
+    _wait_for_terminal(job)
+
+    assert len(calls) == 1
+    assert calls[0].job_id == job.job_id
+    assert calls[0].status is JobStatus.COMPLETED
+    assert calls[0].log_path is not None
+    assert calls[0].output_path == "/tmp/out/report.xlsx"
+    manager.stop()
+
+
+def test_on_finished_hook_fires_for_failed(monkeypatch) -> None:
+    calls = []
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        log_func("出错了")
+        raise RuntimeError("保存文件失败")
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+    manager = JobManager(on_finished=lambda job: calls.append(job))
+
+    job = manager.submit(MINIMAL_PARAMS)
+    _wait_for_terminal(job)
+
+    assert len(calls) == 1
+    assert calls[0].status is JobStatus.FAILED
+    assert calls[0].output_path is None
+    assert calls[0].log_path is not None
+    manager.stop()
+
+
+def test_raising_hook_does_not_change_terminal_status(monkeypatch) -> None:
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+
+    def boom(_job):
+        raise RuntimeError("落库失败")
+
+    manager = JobManager(on_finished=boom)
+
+    job = manager.submit(MINIMAL_PARAMS)
+    assert _wait_for_terminal(job) == JobStatus.COMPLETED
+    assert not manager.has_active_job()
+    manager.stop()
+
+
+def test_no_log_file_when_log_lines_empty(monkeypatch) -> None:
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+    manager = JobManager()
+
+    job = manager.submit(MINIMAL_PARAMS)
+    _wait_for_terminal(job)
+
+    assert job.log_path is None
+    manager.stop()
+
+
+def test_cancelled_queued_job_releases_user_active(monkeypatch) -> None:
+    """回归：排队中（受信号量阻塞、尚未运行）被取消的任务必须释放
+    _user_active，否则该用户被永久 409 拒绝提交。
+
+    排队只发生在跨用户场景：同用户第二个任务在 submit 即被拒，
+    跨用户任务才在全局信号量上等待。时序必须是确定性的：
+    queued 在 first 释放信号量后才真正运行，因此先释放 first，
+    再等两者终结，最后验证用户 2 能再次提交。
+    """
+    holder = threading.Event()
+    first_started = threading.Event()
+
+    def first_run(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        first_started.set()
+        holder.wait(10)
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, first_run)
+    finished = []
+    manager = JobManager(
+        max_concurrent_jobs=1,
+        on_finished=lambda job: finished.append((job.job_id, job.status)),
+    )
+
+    first = manager.submit(MINIMAL_PARAMS, user_id=1)
+    assert first_started.wait(10)
+    queued = manager.submit(MINIMAL_PARAMS, user_id=2)
+    assert manager.has_active_job()
+
+    manager.cancel_job(queued.job_id)
+
+    # 释放第一个任务：信号量归还后 queued 才运行并立即以 cancelled 收尾
+    holder.set()
+    _wait_for_terminal(first)
+    _wait_for_terminal(queued)
+    assert queued.status is JobStatus.CANCELLED
+    assert not manager.has_active_job()
+    assert (queued.job_id, JobStatus.CANCELLED) in finished
+
+    # 关键断言：排队被取消后，用户 2 应立即能再次提交（泄漏时会被拒绝）
+    retry = manager.submit(MINIMAL_PARAMS, user_id=2)
+    _wait_for_terminal(retry)
     manager.stop()

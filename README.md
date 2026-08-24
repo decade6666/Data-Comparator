@@ -262,6 +262,9 @@ Web UI 基于异步任务接口实现进度显示与停止：
 - `GET /api/jobs/{job_id}?since=N`：轮询状态与新增日志，返回 `status` / `progress_percent` / `progress_message` / `log_lines` / `output_path`。只能查询自己的任务，他人任务返回 404。
 - `POST /api/jobs/{job_id}/cancel`：请求停止任务（底层设置停止标志，领域层抛出 `InterruptedError` 后任务标记为 `cancelled`）。
 - `GET /api/jobs/{job_id}/download`：任务完成后下载比对报告。
+- `GET /api/jobs/{job_id}/log`：下载当前任务的日志文件（任务结束时由服务端落盘到用户结果目录，与报告成对）。
+- `GET /api/history?config_name=...&limit=...`：按当前项目列出历史比对记录（时间、文件名、状态、可用性），独立于内存任务表，服务重启后仍可查询。
+- `GET /api/history/{run_id}`：单条历史详情（含当次比对参数快照）；`GET /api/history/{run_id}/report` 与 `/log` 下载对应文件；跨用户访问返回 404。
 - `POST /api/upload`：上传 Excel 文件（`.xlsx`/`.xls`，默认上限 200MB，可用 `DATASET_COMPARATOR_MAX_UPLOAD_MB` 调整），返回 `upload_id`，文件保存在当前用户的上传目录。
 - `GET /api/sheets?upload_id=...`：读取已上传 Excel 文件的 Sheet 名称（仅支持 `upload_id`；上传成功后由前端自动扫描）。
 - `GET/PUT/DELETE /api/configs/...`：配置预设的加载、保存、删除、复制、导入、导出；内置模板（CIMS/TM）为全局只读常量，受保护不可覆盖删除，也不落入用户配置目录。

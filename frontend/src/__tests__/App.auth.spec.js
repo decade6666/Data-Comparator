@@ -125,6 +125,7 @@ async function mountApp() {
         ConfigSidebar: { template: '<div class="stub-config-sidebar" />' },
         CompareForm: { template: '<div class="stub-compare-form" />' },
         ProgressPanel: { template: '<div class="stub-progress-panel" />' },
+        ActionBar: { template: '<div class="stub-action-bar" />' },
         NewConfigDialog: true,
         AdvancedSettingsDialog: true,
         ...elStubs,

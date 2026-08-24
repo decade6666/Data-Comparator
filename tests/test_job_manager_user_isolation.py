@@ -37,6 +37,7 @@ def _blocking_fake(release, started=None, interrupted=False):
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         if started is not None:
             started.set()

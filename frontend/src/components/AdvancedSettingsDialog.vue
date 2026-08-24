@@ -3,10 +3,11 @@ defineProps({
   modelValue: { type: Boolean, default: false },
   maxWorkers: { type: Number, default: 4 },
   isDark: { type: Boolean, default: false },
+  autoDownload: { type: Boolean, default: true },
   isAdmin: { type: Boolean, default: false },
 })
 
-defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark', 'change-password', 'logout'])
+defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark', 'update:autoDownload', 'change-password', 'logout'])
 </script>
 
 <template>
@@ -30,6 +31,12 @@ defineEmits(['update:modelValue', 'update:maxWorkers', 'update:isDark', 'change-
         <el-switch
           :model-value="isDark"
           @update:model-value="$emit('update:isDark', $event)"
+        />
+      </el-form-item>
+      <el-form-item label="完成后自动下载">
+        <el-switch
+          :model-value="autoDownload"
+          @update:model-value="$emit('update:autoDownload', $event)"
         />
       </el-form-item>
     </el-form>

@@ -11,12 +11,16 @@ from urllib.parse import unquote
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
-from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from ..backend.application.background_jobs import (
     start_background_jobs,
     stop_background_jobs,
+)
+from ..backend.application.comparison_history_service import (
+    migrate_config_name,
+    record_job_finished,
 )
 from ..backend.application.comparison_runner import run_comparison
 from ..backend.application.job_manager import get_job_manager
@@ -43,6 +47,7 @@ from ..shared.log_utils import log
 from .dependencies import get_current_user, require_admin
 from .routers import admin as admin_router
 from .routers import auth as auth_router
+from .routers import history as history_router
 from .routers import users as users_router
 
 API_TITLE = "Dataset Comparator API"
@@ -67,9 +72,9 @@ def _user_uploads_dir(user_id: int) -> str:
 
 
 def _user_results_dir(user_id: int) -> str:
-    from ..backend.infrastructure.file_runtime import get_user_data_dir
+    from ..backend.infrastructure.file_runtime import get_user_results_dir
 
-    return os.path.join(get_user_data_dir(user_id), _RESULTS_SUBDIR)
+    return get_user_results_dir(user_id)
 
 
 def _repository_for(user_id: int) -> JsonParameterRepository:
@@ -216,8 +221,10 @@ app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
 app.include_router(auth_router.router, prefix="/api")
 app.include_router(users_router.router, prefix="/api")
 app.include_router(admin_router.router, prefix="/api")
+app.include_router(history_router.router, prefix="/api")
 
 _job_manager = get_job_manager()
+_job_manager.set_finished_hook(record_job_finished)
 
 
 class CompareColors(BaseModel):
@@ -570,6 +577,10 @@ def rename_config(
         raise HTTPException(status_code=409, detail="目标项目已存在")
     repository.save_document(request.new_name, document)
     repository.delete_document(name)
+    # 历史行按 config_name 字符串挂靠；改名后迁移，否则历史被孤立。
+    # 复制（COPY）不迁移：副本是无历史的新项目。
+    with session_context() as session:
+        migrate_config_name(session, current_user.id, name, request.new_name)
     return {"name": request.new_name, "renamed": True}
 
 
@@ -592,13 +603,9 @@ def export_config(
     if document is None:
         raise HTTPException(status_code=404, detail="项目不存在")
     stripped = {
-        key: value
-        for key, value in document.items()
-        if key not in _EXPORT_STRIP_FIELDS
+        key: value for key, value in document.items() if key not in _EXPORT_STRIP_FIELDS
     }
-    tmp_path = _write_config_json_to_temp(
-        name, cast(ParameterDocument, stripped)
-    )
+    tmp_path = _write_config_json_to_temp(name, cast(ParameterDocument, stripped))
     return FileResponse(
         tmp_path,
         filename=f"{name}.json",
@@ -690,6 +697,32 @@ def download_job_result(
         media_type=(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
+    )
+
+
+@app.get("/api/jobs/{job_id}/log")
+def download_job_log(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    """下载当前任务的日志文件（由 JobManager 在任务结束时落盘）。"""
+    job = _job_manager.get_job(job_id)
+    if job is None or job.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    with job.lock:
+        log_path = job.log_path
+    if not log_path:
+        raise HTTPException(status_code=404, detail="该任务没有日志文件")
+    if not os.path.isfile(log_path):
+        raise HTTPException(status_code=410, detail="日志文件已被清理")
+    results_dir = _user_results_dir(current_user.id)
+    safe, message = is_safe_path(log_path, [results_dir])
+    if not safe:
+        raise HTTPException(status_code=400, detail=message)
+    return FileResponse(
+        log_path,
+        filename=os.path.basename(log_path),
+        media_type="text/plain; charset=utf-8",
     )
 
 

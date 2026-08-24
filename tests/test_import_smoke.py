@@ -43,6 +43,10 @@ def test_phase2_module_imports() -> None:
 
     assert ConfigManager is not None
 
+    from src.backend.infrastructure.models.comparison_run import ComparisonRun
+
+    assert ComparisonRun.__tablename__ == "comparison_run"
+
     from src.backend.infrastructure.progress_manager import ThreadSafeProgressManager
 
     assert ThreadSafeProgressManager is not None

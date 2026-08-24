@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Moon, Sunny, Setting, QuestionFilled } from '@element-plus/icons-vue'
 import { useTheme } from './composables/useTheme'
 import { useSidebarResize } from './composables/useSidebarResize'
 import { useJob } from './composables/useJob'
+import { useAutoDownload } from './composables/useAutoDownload'
 import { config, buildJobPayload } from './composables/useConfig'
 import { autoSaveBeforeStart } from './composables/useConfigState'
 import { resetAllJobs } from './composables/useJob'
@@ -18,8 +19,10 @@ import LoginView from './components/LoginView.vue'
 import ProgressPanel from './components/ProgressPanel.vue'
 import ConfigSidebar from './components/ConfigSidebar.vue'
 import CompareForm from './components/CompareForm.vue'
+import ActionBar from './components/ActionBar.vue'
 
 const { isDark, toggleTheme } = useTheme()
+const { enabled: autoDownloadEnabled, setEnabled: setAutoDownloadEnabled } = useAutoDownload()
 const { sidebarWidth, resizerStyle, startResize } = useSidebarResize()
 const job = useJob()
 const auth = useAuth()
@@ -76,6 +79,39 @@ async function stopCompare() {
 function downloadReport() {
   job.download()
 }
+
+// ——— 自动下载：completed → 报告+日志；failed → 仅日志；cancelled 不触发 ———
+let autoDownloadedJobId = null
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function triggerAutoDownload(status) {
+  try {
+    if (status === 'completed') {
+      await job.download()
+      // 串行 + 间隔降低浏览器多文件下载拦截概率；报告优先
+      await sleep(800)
+      await job.downloadLogs()
+    } else if (status === 'failed') {
+      await job.downloadLogs()
+    }
+  } catch (err) {
+    ElMessage.warning('自动下载失败，请点击「下载报告」或「下载日志」手动下载')
+  }
+}
+
+watch(
+  () => job.status.value,
+  (next) => {
+    if (!['completed', 'failed'].includes(next)) return
+    if (autoDownloadedJobId === job.jobId.value) return
+    autoDownloadedJobId = job.jobId.value
+    if (autoDownloadEnabled.value) triggerAutoDownload(next)
+  },
+  { flush: 'post' }
+)
 
 function updateConfig(patch) {
   Object.assign(config, patch)
@@ -149,9 +185,11 @@ function openPasswordFromSettings() {
         v-model="settingsVisible"
         :max-workers="config.max_workers"
         :is-dark="isDark"
+        :auto-download="autoDownloadEnabled"
         :is-admin="true"
         @update:max-workers="applyMaxWorkers"
         @update:is-dark="toggleTheme"
+        @update:auto-download="setAutoDownloadEnabled"
         @change-password="openPasswordFromSettings"
         @logout="logout"
       />
@@ -200,17 +238,21 @@ function openPasswordFromSettings() {
         :progress="job.progress.value"
         :message="job.progressMessage.value"
         :status="job.status.value"
+        :scanning="scanning"
+      />
+      <CompareForm
+        :config="config"
+        @update:config="updateConfig"
+        @config-changed="() => {}"
+      />
+      <ActionBar
+        :status="job.status.value"
         :has-logs="job.logLines.value.length > 0"
         :scanning="scanning"
         @start="startCompare"
         @stop="stopCompare"
         @download-logs="job.downloadLogs()"
         @download-report="downloadReport"
-      />
-      <CompareForm
-        :config="config"
-        @update:config="updateConfig"
-        @config-changed="() => {}"
       />
     </main>
   </div>
@@ -231,8 +273,9 @@ function openPasswordFromSettings() {
         <li>在「结构设置」中设置锚点行号、表头行号，并选择保留或舍弃删除数据。</li>
         <li>在「颜色设置」中设置更新、删除、新增内容的标记颜色。</li>
         <li>在「比对参数」中按需设置排除字段、排除表单、默认锚点及其他表单范围参数。</li>
-        <li>点击「保存项目」保存参数；点击进度卡片中的「开始比对」开始处理。</li>
-        <li>比对过程中可点击「停止比对」；完成后点击「下载报告」获取 Excel 结果。</li>
+        <li>点击操作卡片中的「保存项目」保存参数；点击「开始比对」开始处理。</li>
+        <li>比对过程中可点击「停止比对」；完成后报告与日志会自动下载（可在设置中关闭），也可点击「下载报告」重新获取。</li>
+        <li>点击操作卡片中的「历史记录」可查看并下载当前项目的历次比对结果。</li>
       </ol>
       <p>
         开始比对时会自动保存当前项目。上传文件和项目保存在服务器临时目录中，刷新页面后会自动恢复最近使用的项目；如果文件已过期或被删除，需要重新上传。
@@ -241,7 +284,7 @@ function openPasswordFromSettings() {
       <h4>🧰 项目管理</h4>
       <ul>
         <li><b>新建：</b>点击「新建项目」，输入名称；也可以在弹窗左下角选择 TM 或 CIMS 模板导入参数。</li>
-        <li><b>保存：</b>在「比对参数」卡片底部点击「保存项目」，保存当前参数与已上传文件。</li>
+        <li><b>保存：</b>点击操作卡片中的「保存项目」，保存当前参数与已上传文件。</li>
         <li><b>取消保存：</b>撤销最近一次保存之后的修改，恢复到当前项目的已保存状态。</li>
         <li><b>复制：</b>点击项目名称右侧的复制按钮，输入新名称即可复制当前项目。</li>
         <li><b>编辑：</b>点击项目名称右侧的编辑按钮，可修改项目名称，也可导入内置模板覆盖当前参数（已上传的文件保持不变）。</li>
@@ -273,7 +316,7 @@ function openPasswordFromSettings() {
       <h4>📝 日志记录</h4>
       <ul>
         <li>比对过程中的处理信息会实时显示在进度卡片中，并由服务器任务持续返回。</li>
-        <li>有日志内容时，点击进度卡片中的「下载日志」按钮即可保存文本日志。</li>
+        <li>有日志内容时，点击操作卡片中的「下载日志」按钮即可保存文本日志。</li>
         <li>日志包含处理过程和错误信息，可用于问题排查；若任务失败，请先查看日志中的具体提示。</li>
       </ul>
 
@@ -291,9 +334,11 @@ function openPasswordFromSettings() {
     v-model="settingsVisible"
     :max-workers="config.max_workers"
     :is-dark="isDark"
+    :auto-download="autoDownloadEnabled"
     :is-admin="false"
     @update:max-workers="applyMaxWorkers"
     @update:is-dark="toggleTheme"
+    @update:auto-download="setAutoDownloadEnabled"
     @change-password="openPasswordFromSettings"
     @logout="logout"
   />

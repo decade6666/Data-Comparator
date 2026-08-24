@@ -13,6 +13,7 @@ from ...shared.log_utils import log
 from ..infrastructure.file_runtime import get_app_data_dir
 from ..infrastructure.models.user import User
 from .auth_service import hash_password
+from .comparison_history_service import delete_runs_for_user
 from .recycle_bin_service import RecycleBinService
 
 ADMIN_USERNAME_ENV = "DATASET_COMPARATOR_ADMIN_USERNAME"
@@ -150,6 +151,13 @@ class UserAdminService:
             except Exception as exc:  # noqa: BLE001 - 单条失败不阻断用户删除
                 log("回收配置 {} 失败: {}".format(config_name, exc), None)
                 continue
+        # 历史行记录指向用户目录内的文件，目录删除后一并清空，避免孤儿行。
+        # 注意顺序：必须在 session.delete(user) 之前（comparison_run 无外键，
+        # 行本身不会级联删除）。记录失败不阻断用户删除流程。
+        try:
+            delete_runs_for_user(session, user_id)
+        except Exception as exc:  # noqa: BLE001 - 历史清理失败不阻断删除
+            log("清理用户 {} 的比对历史失败: {}".format(user_id, exc), None)
         shutil.rmtree(
             os.path.join(get_app_data_dir(), "users", str(user_id)),
             ignore_errors=True,

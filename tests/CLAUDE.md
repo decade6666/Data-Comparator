@@ -75,6 +75,8 @@ pytest 配置摘要：
 - `test_sheet_process_result.py`：Sheet 结果默认字段。
 - `test_log_utils.py`：日志打印、回调和 console encoding fallback。
 - `test_import_smoke.py`：包与关键模块导入。
+- `test_comparison_history_service.py`：历史落库（basename、剥离、过滤、排序、删除）。
+- `test_web_api_history.py`：历史列表/详情/下载、归属 404、410、422 校验。
 
 ## 常见问题 (FAQ)
 
