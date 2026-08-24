@@ -635,3 +635,43 @@ def test_cancel_all_waits_for_terminal_hook(monkeypatch) -> None:
     retry = manager.submit(MINIMAL_PARAMS, user_id=1)
     _wait_for_terminal(retry)
     manager.stop()
+
+
+def test_begin_user_guard_rejected_during_rename(monkeypatch) -> None:
+    """回归：用户有进行中的项目改名时，删除闸门必须失败关闭（409），
+    否则删除会删掉目录而改名请求随后重建，残留文件落入复用 id 的新用户。"""
+    _install_fake_run_comparison(
+        monkeypatch,
+        lambda *args, **kwargs: "/tmp/out/report.xlsx",
+    )
+    manager = JobManager()
+
+    assert manager.begin_project_rename(1, "A") is True
+    # 改名在途 → 删除闸门拒绝
+    assert manager.begin_user_guard(1) is False
+    # 且用户仍被视为占用（不允许新提交）
+    with pytest.raises(ValueError, match="项目正在改名"):
+        manager.submit(MINIMAL_PARAMS, user_id=1)
+
+    manager.end_project_rename(1)
+    assert manager.begin_user_guard(1) is True
+    manager.end_user_guard(1)
+
+
+def test_begin_project_rename_rejected_while_rename_in_flight(monkeypatch) -> None:
+    """回归：同用户并发改名（第二次）必须拒绝，避免先完成者提前
+    释放后完成者的闸门导致历史归属错乱。"""
+    _install_fake_run_comparison(
+        monkeypatch,
+        lambda *args, **kwargs: "/tmp/out/report.xlsx",
+    )
+    manager = JobManager()
+
+    assert manager.begin_project_rename(1, "A") is True
+    assert manager.begin_project_rename(1, "B") is False
+    # 闸门持有期：提交被拒
+    with pytest.raises(ValueError, match="项目正在改名"):
+        manager.submit(MINIMAL_PARAMS, user_id=1)
+    manager.end_project_rename(1)
+    assert manager.begin_project_rename(1, "B") is True
+    manager.end_project_rename(1)

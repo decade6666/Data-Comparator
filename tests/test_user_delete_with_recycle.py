@@ -6,6 +6,7 @@ import os
 import threading
 import time
 
+from src.backend.application.comparison_history_service import record_job_finished
 from src.backend.application.job_manager import JobStatus
 
 MINIMAL_PARAMS = {
@@ -257,4 +258,36 @@ def test_delete_user_timeout_fails_closed(auth_client, monkeypatch, tmp_path) ->
     assert auth_client.delete(f"/api/users/{bob_id}").status_code == 204
     with session_context() as session:
         assert session.query(ComparisonRun).filter_by(user_id=bob_id).count() == 0
-    web_api._job_manager.set_finished_hook(None)
+    web_api._job_manager.set_finished_hook(record_job_finished)
+
+
+def test_delete_user_rejected_while_rename_in_flight(
+    auth_client, monkeypatch, tmp_path
+) -> None:
+    """回归：用户有进行中的项目改名时删除必须 409，改名完成后删除成功。"""
+    import threading
+
+    from src.backend.application import job_manager as job_manager_module
+    from src.backend.infrastructure import database
+    from src.backend.infrastructure.database import init_db
+    from src.frontend import web_api
+
+    bob_id = _create_user(auth_client, "bob", "bob-pass-123").json()["id"]
+    monkeypatch.setenv("DATASET_COMPARATOR_DATA_DIR", str(tmp_path / "app-data"))
+    database._engine = None
+    init_db()
+    auth_client.put("/api/configs/旧项目", json={"anchor_row_num": 2})
+
+    # 直接登记改名闸门，模拟改名请求在途（不真正执行文件操作）
+    assert web_api._job_manager.begin_project_rename(bob_id, "旧项目") is True
+    try:
+        response = auth_client.delete(f"/api/users/{bob_id}")
+        assert response.status_code == 409
+        assert "正在进行项目改名" in response.json()["detail"]
+        # 用户行保留（目录由 bob 自己的上传动作创建，此处未创建也不断言）
+        users = auth_client.get("/api/users").json()
+        assert any(user["id"] == bob_id for user in users)
+    finally:
+        web_api._job_manager.end_project_rename(bob_id)
+
+    assert auth_client.delete(f"/api/users/{bob_id}").status_code == 204

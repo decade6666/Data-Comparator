@@ -1,10 +1,11 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Moon, Sunny, Setting, QuestionFilled } from '@element-plus/icons-vue'
 import { useTheme } from './composables/useTheme'
 import { useSidebarResize } from './composables/useSidebarResize'
 import { useJob } from './composables/useJob'
+import { api } from './composables/useApi'
 import { useAutoDownload } from './composables/useAutoDownload'
 import { config, buildJobPayload } from './composables/useConfig'
 import { autoSaveBeforeStart } from './composables/useConfigState'
@@ -25,8 +26,7 @@ const { isDark, toggleTheme } = useTheme()
 const {
   enabled: autoDownloadEnabled,
   setEnabled: setAutoDownloadEnabled,
-  committedJobId: autoDownloadJobId,
-  captureJobId,
+  downloadedJobIds,
 } = useAutoDownload()
 const { sidebarWidth, resizerStyle, startResize } = useSidebarResize()
 const job = useJob()
@@ -68,7 +68,6 @@ async function startCompare() {
     const savedName = await autoSaveBeforeStart()
     if (!savedName) return
     await job.submit(buildJobPayload())
-    captureJobId(job.jobId.value)
   } catch (err) {
     ElMessage.error(err.message)
   }
@@ -91,40 +90,56 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// 捕获的 jobId 与当前活跃任务一致时走当前桶下载；不一致（提交后切走了
-// 项目）时经 entryFor 定位原项目条目下载，避免错下新项目的结果。
-async function triggerAutoDownload(status, jobId) {
-  const report = () =>
-    jobId === job.jobId.value ? job.download() : job.downloadFor(job.entryFor(jobId))
-  const logs = () =>
-    jobId === job.jobId.value
-      ? job.downloadLogs()
-      : job.downloadLogsFor(job.entryFor(jobId))
+// 用 useJob 终态回调传的冻结快照下载，不经活跃项目/实时条目：
+// 切走项目仍下原任务；重提同项目不干扰；提交失败不残留捕获状态。
+async function triggerAutoDownload(snapshot) {
   try {
-    if (status === 'completed') {
-      await report()
+    if (snapshot.status === 'completed') {
+      await api.download(
+        `/jobs/${snapshot.jobId}/download`,
+        snapshot.outputName || '比对报告.xlsx'
+      )
       // 串行 + 间隔降低浏览器多文件下载拦截概率；报告优先
       await sleep(800)
-      await logs()
-    } else if (status === 'failed') {
-      await logs()
+      await downloadLogSnapshot(snapshot)
+    } else if (snapshot.status === 'failed') {
+      await downloadLogSnapshot(snapshot)
     }
   } catch (err) {
     ElMessage.warning('自动下载失败，请点击「下载报告」或「下载日志」手动下载')
   }
 }
 
-watch(
-  () => job.status.value,
-  (next) => {
-    if (!['completed', 'failed'].includes(next)) return
-    // 优先用提交时捕获的 jobId（切走项目也下原任务）；无捕获时回退当前任务。
-    const jobId = autoDownloadJobId.value || job.jobId.value
-    if (!jobId) return
-    if (autoDownloadEnabled.value) triggerAutoDownload(next, jobId)
-  },
-  { flush: 'post' }
-)
+async function downloadLogSnapshot(snapshot) {
+  try {
+    await api.download(
+      `/jobs/${snapshot.jobId}/log`,
+      `比对日志-${snapshot.outputName || 'log'}.txt`
+    )
+  } catch (_err) {
+    // 服务端日志不可用时退回冻结快照的内存 Blob
+    const blob = new Blob([snapshot.logLines.join('\n')], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `比对日志-${snapshot.outputName || 'log'}.txt`
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
+}
+
+// useJob 轮询在任务进入终态时触发（含已切走的项目）；此处按开关与
+// 任务级去重决定是否下载。
+job.setOnTerminal((snapshot) => {
+  if (!['completed', 'failed'].includes(snapshot.status)) return
+  if (!autoDownloadEnabled.value) return
+  if (downloadedJobIds.has(snapshot.jobId)) return
+  downloadedJobIds.add(snapshot.jobId)
+  triggerAutoDownload(snapshot)
+})
 
 function updateConfig(patch) {
   Object.assign(config, patch)

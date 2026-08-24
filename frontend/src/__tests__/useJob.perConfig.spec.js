@@ -159,4 +159,34 @@ describe('useJob per-config buckets', () => {
     expect(job.status.value).toBe('completed')
     expect(job.logLines.value).toEqual(['late-line'])
   })
+
+  it('terminal callback fires for a task after switching away (切走仍触发)', async () => {
+    const job = useJob()
+    const onTerminal = vi.fn()
+    job.setOnTerminal(onTerminal)
+
+    job.activateJob('A')
+    api.post.mockResolvedValueOnce({ job_id: 'job-A', status: 'pending' })
+    await job.submit({ a: 1 })
+    await vi.advanceTimersByTimeAsync(1100)
+
+    // 切走 A，轮询不停止；A 的终态在后台被检测到并触发回调
+    job.activateJob('B')
+    await vi.advanceTimersByTimeAsync(1100)
+
+    expect(onTerminal).toHaveBeenCalledTimes(1)
+    const snapshot = onTerminal.mock.calls[0][0]
+    expect(snapshot.jobId).toBe('job-A')
+    expect(snapshot.status).toBe('completed')
+    expect(snapshot.outputName).toBe('A-比对报告.xlsx')
+    expect(snapshot.logLines).toEqual(['line-1', 'line-2'])
+  })
+
+  it('submit returns the newly submitted job id', async () => {
+    const job = useJob()
+    job.activateJob('A')
+    api.post.mockResolvedValueOnce({ job_id: 'job-A', status: 'pending' })
+    const jobId = await job.submit({ a: 1 })
+    expect(jobId).toBe('job-A')
+  })
 })

@@ -30,6 +30,7 @@
 约束：
 
 - `JobManager` 强制**单任务串行**：`domain/processing_control.py` 的 `_global_stop_flag` 是进程级全局状态，并发任务会互相覆盖停止标志。
+- 用户级生命周期闸门互斥：`begin_user_guard`（删除）与 `begin_project_rename`（改名）互相拒绝（任一在途时另一返回 False），同用户并发改名拒绝；`end_user_guard` 只清删除标记，不触碰改名标记。任务 finalize 的可见性由 `finalized_event`（最后设置）保证，等待方只轮询该事件，超时抛 `JobFinalizationTimeoutError` 失败关闭。
 
 下层依赖：
 
