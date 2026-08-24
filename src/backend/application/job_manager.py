@@ -110,20 +110,29 @@ class JobManager:
         self._user_guarded: set = set()
         self._renaming_users: set = set()
 
-    def begin_user_guard(self, user_id: int) -> None:
-        """登记用户删除闸门；持有期间拒绝该用户新提交，直到 end_user_guard。"""
+    def begin_user_guard(self, user_id: int) -> bool:
+        """登记用户删除闸门；持有期间拒绝该用户新提交，直到 end_user_guard。
+
+        用户有进行中的项目改名时失败关闭（返回 False）：删除会删目录与
+        User 行，而改名请求随后会用 os.makedirs 重建目录，残留文件在
+        SQLite id 复用后落入新用户。"""
         with self._lock:
+            if user_id in self._renaming_users:
+                return False
             self._user_guarded.add(user_id)
+            return True
 
     def end_user_guard(self, user_id: int) -> None:
         with self._lock:
             self._user_guarded.discard(user_id)
-            self._renaming_users.discard(user_id)
 
     def begin_project_rename(self, user_id: int, config_name: str) -> bool:
-        """检查并登记项目改名：存在未收尾任务时返回 False，否则登记改名闸门。"""
+        """检查并登记项目改名：存在未收尾任务或同用户改名在途时返回 False，
+        否则登记改名闸门（闸门持续到 end_project_rename）。"""
         with self._lock:
             if user_id in self._user_guarded:
+                return False
+            if user_id in self._renaming_users:
                 return False
             for job in self._jobs.values():
                 if (

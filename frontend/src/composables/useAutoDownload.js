@@ -4,9 +4,9 @@ const STORAGE_KEY = "dc_auto_download";
 
 const enabled = ref(localStorage.getItem(STORAGE_KEY) !== "off");
 
-// 自动下载把 jobId 绑定到「提交时刻」的项目：提交后切换项目再完成，
-// 仍下载原项目的结果，不会错下新项目（Critical 修复）。
-const committedJobId = ref(null);
+// 任务级去重：同一任务只自动下载一次（含切走项目后再完成、重复轮询命中）。
+// 模块级 Set，跨组件重渲染稳定；测试通过 resetDownloaded() 清空。
+const downloadedJobIds = new Set();
 
 export function useAutoDownload() {
   function setEnabled(value) {
@@ -14,13 +14,9 @@ export function useAutoDownload() {
     localStorage.setItem(STORAGE_KEY, value ? "on" : "off");
   }
 
-  function captureJobId(jobId) {
-    committedJobId.value = jobId;
+  function resetDownloaded() {
+    downloadedJobIds.clear();
   }
 
-  function resetCommittedJobId() {
-    committedJobId.value = null;
-  }
-
-  return { enabled, setEnabled, committedJobId, captureJobId, resetCommittedJobId };
+  return { enabled, setEnabled, downloadedJobIds, resetDownloaded };
 }

@@ -41,7 +41,7 @@ FastAPI 接口：
 - `POST /api/upload`：上传 Excel（`.xlsx`/`.xls`，默认 200MB）。
 - `GET /api/browse`：浏览服务器目录（白名单 `DATASET_COMPARATOR_BROWSE_ROOTS`）。
 - `GET /api/sheets`：读取文件 Sheet 名称。
-- `GET/PUT/DELETE /api/configs` 系列：配置预设 CRUD、复制、改名、导入、导出。
+- `GET/PUT/DELETE /api/configs` 系列：配置预设 CRUD、复制、改名、导入、导出。`POST /api/configs/{name}/rename` 在项目有未收尾比对任务时返回 409「该项目仍有比对任务正在收尾」。
 - `GET /`、`GET /assets/{path}`：托管 `frontend/dist` 静态资源（`DATASET_COMPARATOR_STATIC_DIR` 可覆盖）。
 
 异常映射：
@@ -49,6 +49,7 @@ FastAPI 接口：
 - `FileNotFoundError` -> HTTP 404
 - `ValueError` -> HTTP 400
 - `InterruptedError` -> HTTP 409
+- `JobFinalizationTimeoutError` -> HTTP 409（删除用户时任务收尾超时，删除中止且资源保留）
 - `OSError` / `RuntimeError` -> HTTP 500
 - 未知异常 -> HTTP 500
 
@@ -112,6 +113,7 @@ Web 接口放在 `web_api.py`，但业务编排应放在 `backend/application`�
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-24 | fix | 删除/改名闸门互斥：改名在途时删除 409、同用户并发改名拒绝；自动下载改任务级触发（useJob 终态回调 + 冻结快照 + jobId 去重），切走项目仍下原任务。 |
 | 2026-08-20 | feat | 新增配置改名端点 `POST /api/configs/{name}/rename`（内置模板保护、目标重名 409）。 |
 | 2026-08-18 | feat | 新增任务/上传/浏览/Sheet 发现/配置 CRUD 端点与静态资源托管，支持浏览器 Web UI。 |
 | 2026-05-24T03:25:49 | docs | 初始化 `frontend` 模块 Claude 指南。 |

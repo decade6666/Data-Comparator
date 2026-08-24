@@ -76,7 +76,9 @@ pytest 配置摘要：
 - `test_log_utils.py`：日志打印、回调和 console encoding fallback。
 - `test_import_smoke.py`：包与关键模块导入。
 - `test_comparison_history_service.py`：历史落库（basename、剥离、过滤、排序、删除）。
-- `test_web_api_history.py`：历史列表/详情/下载、归属 404、410、422 校验。
+- `test_web_api_history.py`：历史列表/详情/下载、归属 404、410、422 校验、已删用户不落库。
+- `test_job_manager.py`：任务生命周期、取消、cleanup、guard 互斥（删除×改名、并发改名）、finalize 超时。
+- `test_user_delete_with_recycle.py`：用户硬删除（回收站、任务取消、改名在途 409、收尾超时 409）。
 
 ## 常见问题 (FAQ)
 

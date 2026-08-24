@@ -112,7 +112,11 @@ def delete_user(
     manager = get_job_manager()
     # 闸门必须在事务提交/回滚前持续持有：删除期间拒绝该用户新任务提交，
     # 避免任务线程在用户行/目录删除后重建历史与结果目录（SQLite 用户 id 会复用）。
-    manager.begin_user_guard(user_id)
+    # 用户有进行中的项目改名时拒绝删除：改名会在删除后重建用户目录。
+    if not manager.begin_user_guard(user_id):
+        raise HTTPException(
+            status_code=409, detail="该用户正在进行项目改名，请稍后再删除"
+        )
     try:
         try:
             UserAdminService.delete_user(session, user_id, job_manager=manager)

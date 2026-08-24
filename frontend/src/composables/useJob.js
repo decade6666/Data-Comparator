@@ -53,35 +53,59 @@ function _startPolling() {
   pollTimer = setInterval(_poll, POLL_INTERVAL_MS)
 }
 
+// 终态回调：轮询检测到任一任务（含已切走的项目）进入终态时触发，
+// 传入冻结快照供自动下载使用，不依赖当前活跃项目。
+let _onTerminal = null
+
+function setOnTerminal(cb) {
+  _onTerminal = cb
+}
+
 async function _poll() {
-  const key = activeKey.value // 进入时捕获归属，防止在途切换项目写串
-  if (!key || !(key in entries)) return
-  const entry = entries[key]
-  if (!entry.jobId) return
-  try {
-    const body = await api.get(`/jobs/${entry.jobId}?since=${entry.logCursor}`)
-    if (!body) return
-    if (!(key in entries)) return // 轮询期间项目被删除，丢弃结果
-    const target = entries[key]
-    if (body.status !== target.status) target.status = body.status
-    if (body.progress_percent != null) target.progress = body.progress_percent
-    if (body.progress_message) target.progressMessage = body.progress_message
-    if (body.log_lines && body.log_lines.length) {
-      target.logLines.push(...body.log_lines)
-      target.logCursor = body.log_cursor
+  const snapshotEntries = []
+  for (const [key, entry] of Object.entries(entries)) {
+    if (!entry.jobId || TERMINAL_STATUSES.has(entry.status)) continue
+    try {
+      const body = await api.get(`/jobs/${entry.jobId}?since=${entry.logCursor}`)
+      if (!body || !(key in entries)) continue // 轮询期间项目被删除，丢弃结果
+      const target = entries[key]
+      if (body.status !== target.status) target.status = body.status
+      if (body.progress_percent != null) target.progress = body.progress_percent
+      if (body.progress_message) target.progressMessage = body.progress_message
+      if (body.log_lines && body.log_lines.length) {
+        target.logLines.push(...body.log_lines)
+        target.logCursor = body.log_cursor
+      }
+      if (body.output_path) {
+        target.outputPath = body.output_path
+        target.outputName = body.output_path.split('/').pop() || '比对报告.xlsx'
+      }
+      if (body.error) target.error = body.error
+      if (TERMINAL_STATUSES.has(body.status)) {
+        // 冻结快照：自动下载用提交/完成时刻的值，重提同项目不干扰
+        snapshotEntries.push({
+          jobId: target.jobId,
+          status: target.status,
+          outputName: target.outputName,
+          logLines: [...target.logLines],
+        })
+      }
+    } catch (err) {
+      // 轮询失败时保留最后一次已知状态
     }
-    if (body.output_path) {
-      target.outputPath = body.output_path
-      target.outputName = body.output_path.split('/').pop() || '比对报告.xlsx'
-    }
-    if (body.error) target.error = body.error
-    if (TERMINAL_STATUSES.has(body.status)) {
-      // 已切走的项目完成时不停掉新项目的轮询
-      if (activeKey.value === key) _stopPolling()
-    }
-  } catch (err) {
-    // 轮询失败时保留最后一次已知状态
   }
+  if (_onTerminal) {
+    for (const snapshot of snapshotEntries) _onTerminal(snapshot)
+  }
+  _ensurePolling()
+}
+
+function _ensurePolling() {
+  const anyActive = Object.values(entries).some(
+    (entry) => entry.jobId && !TERMINAL_STATUSES.has(entry.status)
+  )
+  if (anyActive) _startPolling()
+  else _stopPolling()
 }
 
 async function submit(params) {
@@ -91,7 +115,8 @@ async function submit(params) {
   if (!(key in entries)) entries[key] = blankEntry() // submit 期间桶被清空则重建
   entries[key].jobId = body.job_id
   entries[key].status = 'pending'
-  _startPolling()
+  _ensurePolling()
+  return body.job_id // 返回刚提交任务 id，供调用方绑定（不读当前项目）
 }
 
 async function cancel() {
@@ -114,18 +139,15 @@ function reset() {
 }
 
 function activateJob(name) {
-  _stopPolling()
+  // 不停止轮询：轮询按任务（而非活跃项目）驱动，切走后任务仍在轮询
   activeKey.value = name
-  const entry = entryOf(name)
-  if (entry.jobId && !TERMINAL_STATUSES.has(entry.status)) {
-    _startPolling()
-  }
+  _ensurePolling()
 }
 
 function dropJob(name) {
-  if (activeKey.value === name) _stopPolling()
   delete entries[name]
   if (activeKey.value === name) activeKey.value = ''
+  _ensurePolling()
 }
 
 function renameJob(from, to) {
@@ -209,6 +231,7 @@ export function useJob() {
     entryFor,
     downloadFor,
     downloadLogsFor,
+    setOnTerminal,
     reset,
     activateJob,
     dropJob,
