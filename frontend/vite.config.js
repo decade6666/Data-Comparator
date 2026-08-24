@@ -1,12 +1,13 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-// 归一化部署 base：未设置或 '/' 保持根路径；'/dc' / 'dc/' 均归一为 '/dc/'；
+// 归一化部署 base：未设置时使用相对路径；'/' 保持根路径；'/dc' / 'dc/' 均归一为 '/dc/'；
 // 绝对 URL base（CDN 部署）原样透传
 function normalizeBase(raw) {
-  if (!raw) return '/'
+  if (!raw) return './'
   let b = String(raw).trim()
-  if (!b || b === '/') return '/'
+  if (!b) return './'
+  if (b === '/') return '/'
   if (b.includes('://')) return b
   if (!b.startsWith('/')) b = '/' + b
   if (!b.endsWith('/')) b += '/'

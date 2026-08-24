@@ -1,5 +1,36 @@
-const BASE = (import.meta.env?.VITE_BASE_PATH) || ''
-const API_BASE = (BASE.endsWith('/') ? BASE : BASE + '/') + 'api'
+// 挂载前缀运行时推导：优先构建期显式配置，否则由自身模块 URL 回溯到挂载根，
+// 使同一份产物在根路径直连与子路径反代下都能拼出正确的 API 地址。
+function detectBasePath(
+  moduleUrl = import.meta.url,
+  configured = import.meta.env?.VITE_BASE_PATH
+) {
+  if (configured) return configured
+  try {
+    const parsedUrl = new URL(moduleUrl)
+    if (parsedUrl.protocol === 'file:') return ''
+    if (parsedUrl.pathname.includes('/assets/')) {
+      return new URL('../', parsedUrl).pathname
+    }
+    // Vite 开发态模块位于 /src/...，使用页面地址保留子路径。
+    if (typeof document !== 'undefined' && document.baseURI) {
+      return new URL('./', document.baseURI).pathname
+    }
+    return new URL('../', parsedUrl).pathname
+  } catch (_err) {
+    return ''
+  }
+}
+
+function buildApiBase(base) {
+  if (!base) return '/api'
+  const normalizedBase =
+    base === './' || base.startsWith('/') || base.includes('://')
+      ? base
+      : `/${base}`
+  return (normalizedBase.endsWith('/') ? normalizedBase : normalizedBase + '/') + 'api'
+}
+
+const API_BASE = buildApiBase(detectBasePath())
 const TOKEN_KEY = 'dc_token'
 
 function apiUrl(path) {
@@ -10,6 +41,11 @@ function authHeaders(headers = {}) {
   const token = localStorage.getItem(TOKEN_KEY)
   if (!token) return headers
   return { ...headers, Authorization: `Bearer ${token}` }
+}
+
+function formatErrorBody(text) {
+  const maxLength = 200
+  return text.length > maxLength ? text.slice(0, maxLength) + '…' : text
 }
 
 async function request(method, path, options = {}) {
@@ -34,12 +70,21 @@ async function request(method, path, options = {}) {
     }
     let detail = '请求失败 (' + response.status + ')'
     try {
-      const data = await response.json()
-      if (data && data.detail) {
-        detail =
-          typeof data.detail === 'string'
-            ? data.detail
-            : JSON.stringify(data.detail)
+      const text = (await response.text()).trim()
+      if (text) {
+        try {
+          const data = JSON.parse(text)
+          if (data && data.detail) {
+            detail =
+              typeof data.detail === 'string'
+                ? data.detail
+                : JSON.stringify(data.detail)
+          } else {
+            detail += ': ' + formatErrorBody(text)
+          }
+        } catch (_jsonErr) {
+          detail += ': ' + formatErrorBody(text)
+        }
       }
     } catch (_err) {
       // 保留默认错误信息
@@ -123,3 +168,5 @@ export const api = {
   postForm,
   download,
 }
+
+export { detectBasePath }
