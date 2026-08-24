@@ -26,6 +26,7 @@ import {
   copyConfig,
   renameConfig,
 } from '../composables/useConfig'
+import { dropJob, renameJob } from '../composables/useJob'
 
 const configs = ref([])
 const userConfigs = computed(() =>
@@ -48,7 +49,7 @@ async function select(name) {
 }
 
 async function createNew() {
-  const name = await openNewConfigDialog()
+  const name = await openNewConfigDialog({ blank: true })
   if (!name) return
   try {
     await saveConfig(name)
@@ -72,6 +73,7 @@ async function removeConfig(name) {
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )
     await deleteConfig(name)
+    dropJob(name)
     if (currentName.value === name) clearSelectedConfig()
     await refresh()
     ElMessage.success('已移至回收站')
@@ -86,7 +88,10 @@ async function editConfig(name) {
     const newName = await openEditConfigDialog(name)
     if (!newName) return
     const renamed = newName !== name
-    if (renamed) await renameConfig(name, newName)
+    if (renamed) {
+      await renameConfig(name, newName)
+      renameJob(name, newName)
+    }
     await saveConfig(newName)
     await refresh()
     await selectConfig(newName)

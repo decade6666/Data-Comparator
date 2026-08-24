@@ -40,6 +40,11 @@ def read_single_sheet_from_excel(
 
         ws = wb[sheet_name]  # 获取指定Sheet
 
+        # CRF-Editor 等生成器写死 <dimension ref="A1"/>，只读模式会据此把工作表
+        # 截断成 1x1；清空缓存维度后按实际行流式推断（pandas 读取时同样做法）。
+        if hasattr(ws, "reset_dimensions"):
+            ws.reset_dimensions()
+
         # 获取SASFieldLabel和SASFieldName（列标签和列名）
         sas_field_label = []
         sas_field_name = []
