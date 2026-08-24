@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from ...shared.log_utils import log
 from ..infrastructure.database import get_engine
 from ..infrastructure.models.comparison_run import ComparisonRun
+from ..infrastructure.models.user import User
 from .job_manager import JobState, JobStatus
 
 #: 落库前从参数快照中剥离的字段：绝对服务器路径与已过期上传引用。
@@ -80,10 +81,17 @@ def record_run(
 
 
 def record_job_finished(job: JobState) -> None:
-    """``JobManager`` 结束回调入口：自建 Session 落库，异常只记录不抛出。"""
+    """``JobManager`` 结束回调入口：自建 Session 落库，异常只记录不抛出。
+
+    用户在任务收尾前已被硬删除时跳过落库（并避免重建其数据目录）——
+    SQLite 用户 id 会复用，写入已删除用户的历史行无法安全归属。
+    """
     try:
         session = Session(get_engine())
         try:
+            if session.get(User, job.user_id) is None:
+                log("跳过已删除用户的比对历史: user_id={}".format(job.user_id), None)
+                return
             record_run(session, job)
             session.commit()
         except Exception:

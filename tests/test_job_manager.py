@@ -40,6 +40,15 @@ def _install_fake_run_comparison(monkeypatch, fake):
     monkeypatch.setattr(job_manager_module, "run_comparison", fake)
 
 
+def _blocking_hook_release(release: threading.Event):
+    """返回一个阻塞在 ``release`` 上的结束 hook，用于制造确定性的 finalize 窗口。"""
+
+    def hook(job) -> None:
+        release.wait(10)
+
+    return hook
+
+
 def test_submit_runs_and_completes(monkeypatch) -> None:
     release = threading.Event()
 
@@ -465,5 +474,164 @@ def test_cancelled_queued_job_releases_user_active(monkeypatch) -> None:
 
     # 关键断言：排队被取消后，用户 2 应立即能再次提交（泄漏时会被拒绝）
     retry = manager.submit(MINIMAL_PARAMS, user_id=2)
+    _wait_for_terminal(retry)
+    manager.stop()
+
+
+def test_cleanup_keeps_terminal_job_until_finalized(monkeypatch) -> None:
+    """回归：终态但历史 hook 尚未完成的任务不得被清理/淘汰，也不得让同用户
+    重新提交。finalize 完成后清理与提交恢复。"""
+    now_ref = {"value": datetime.datetime(2026, 8, 18, 12, 0, 0)}
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+    release = threading.Event()
+    manager = JobManager(
+        retention_minutes=30,
+        max_jobs=1,
+        now=lambda: now_ref["value"],
+        on_finished=_blocking_hook_release(release),
+    )
+
+    job = manager.submit(MINIMAL_PARAMS, user_id=1)
+    _wait_for_terminal(job)
+    now_ref["value"] += datetime.timedelta(minutes=31)
+
+    # hook 阻塞窗口内：任务不可清理，用户视为占用
+    assert manager.cleanup() == 0
+    assert manager.get_job(job.job_id) is not None
+    with pytest.raises(ValueError, match="已有比对任务正在运行"):
+        manager.submit(MINIMAL_PARAMS, user_id=1)
+
+    # 释放 hook：finalize 完成，任务可被保留期淘汰，用户可再次提交
+    release.set()
+    deadline = time.monotonic() + 10
+    while not job.finalized_event.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert job.finalized_event.is_set()
+    assert manager.has_active_job() is False
+    assert manager.cleanup() == 1
+    assert manager.get_job(job.job_id) is None
+    retry = manager.submit(MINIMAL_PARAMS, user_id=1)
+    _wait_for_terminal(retry)
+    manager.stop()
+
+
+def test_cleanup_cap_skips_terminal_job_until_finalized(monkeypatch) -> None:
+    """回归：max_jobs 上限不得淘汰未 finalize 的终态任务；超额时只淘汰
+    已 finalize 的旧任务，未 finalize 的必须保留。"""
+    now_ref = {"value": datetime.datetime(2026, 8, 18, 12, 0, 0)}
+    releases = {"a": threading.Event(), "b": threading.Event(), "c": threading.Event()}
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+
+    def blocking_hook(job) -> None:
+        releases[job.config_name].wait(10)
+
+    manager = JobManager(
+        max_jobs=2,
+        max_concurrent_jobs=3,
+        now=lambda: now_ref["value"],
+        on_finished=blocking_hook,
+    )
+
+    jobs = {}
+    for user_id, name in ((1, "a"), (2, "b"), (3, "c")):
+        job = manager.submit(MINIMAL_PARAMS, user_id=user_id, config_name=name)
+        _wait_for_terminal(job)
+        jobs[name] = job
+
+    # 三个终态任务 hook 全部阻塞：cap 超额但一个都不允许淘汰
+    assert manager.cleanup() == 0
+    for job in jobs.values():
+        assert manager.get_job(job.job_id) is not None
+
+    # 只释放 a、b：超额 1 个，必须从已 finalize 中淘汰
+    releases["a"].set()
+    releases["b"].set()
+    deadline = time.monotonic() + 10
+    while (
+        not jobs["a"].finalized_event.is_set() or not jobs["b"].finalized_event.is_set()
+    ) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert manager.cleanup() == 1
+    # 未 finalize 的 c 必须仍在
+    assert manager.get_job(jobs["c"].job_id) is not None
+    assert (
+        sum(1 for job in jobs.values() if manager.get_job(job.job_id) is not None) == 2
+    )
+    releases["c"].set()
+    manager.stop()
+
+
+def test_cancel_all_waits_for_terminal_hook(monkeypatch) -> None:
+    """回归：cancel_all_for_user 必须等待终态任务的 hook 完成，而不是只看状态。"""
+    release = threading.Event()
+    hook_started = threading.Event()
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+
+    def blocking_hook(job) -> None:
+        hook_started.set()
+        release.wait(10)
+
+    manager = JobManager(on_finished=blocking_hook)
+    job = manager.submit(MINIMAL_PARAMS, user_id=1)
+    _wait_for_terminal(job)
+    assert hook_started.wait(10)
+    assert not job.finalized_event.is_set()
+
+    # 短超时：等待失败但用户仍视为占用（不允许新提交）
+    from src.backend.application.job_manager import (
+        JobFinalizationTimeoutError,
+    )
+
+    with pytest.raises(JobFinalizationTimeoutError):
+        manager.cancel_all_for_user(user_id=1, timeout=0.2)
+    assert job.finalized_event.is_set() is False
+    with pytest.raises(ValueError, match="已有比对任务正在运行"):
+        manager.submit(MINIMAL_PARAMS, user_id=1)
+    assert manager.get_job(job.job_id) is not None
+
+    # 释放 hook：finalize 完成，用户恢复
+    release.set()
+    deadline = time.monotonic() + 10
+    while not job.finalized_event.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    count = manager.cancel_all_for_user(user_id=1, timeout=5)
+    assert count == 0
+    retry = manager.submit(MINIMAL_PARAMS, user_id=1)
     _wait_for_terminal(retry)
     manager.stop()

@@ -176,3 +176,85 @@ def test_delete_user_with_pending_extra_config_single_failure_ok(
     assert auth_client.delete(f"/api/users/{bob_id}").status_code == 204
     entries = auth_client.get("/api/admin/recycle-bin").json()
     assert {entry["original_config_name"] for entry in entries} == {"好配置"}
+
+
+def test_delete_user_timeout_fails_closed(auth_client, monkeypatch, tmp_path) -> None:
+    """回归：删除用户时终态任务的 hook 卡住，删除必须 409 失败并保留
+    用户/配置/历史/目录，且用户仍不允许提交新任务。"""
+    import threading
+
+    from src.backend.application import job_manager as job_manager_module
+    from src.backend.infrastructure import database
+    from src.backend.infrastructure.database import init_db, session_context
+    from src.backend.infrastructure.models.comparison_run import ComparisonRun
+    from src.frontend import web_api
+
+    bob_id = _create_user(auth_client, "bob", "bob-pass-123").json()["id"]
+    bob_token = _login(auth_client, "bob", "bob-pass-123")
+    bob_headers = _headers(bob_token)
+    auth_client.put(
+        "/api/configs/配置A", json={"anchor_row_num": 1}, headers=bob_headers
+    )
+
+    monkeypatch.setenv("DATASET_COMPARATOR_DATA_DIR", str(tmp_path / "app-data"))
+    database._engine = None
+    init_db()
+
+    release = threading.Event()
+    hook_started = threading.Event()
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        return "/tmp/out/report.xlsx"
+
+    monkeypatch.setattr(job_manager_module, "run_comparison", fake_run_comparison)
+    web_api._job_manager.set_finished_hook(
+        lambda job: (
+            hook_started.set(),
+            release.wait(30),
+        )
+    )
+    job = web_api._job_manager.submit(
+        {"old_file_path": "o.xlsx", "new_file_path": "n.xlsx"},
+        config_name="配置A",
+        user_id=bob_id,
+    )
+    deadline = time.monotonic() + 10
+    while job.status.value != "completed" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert hook_started.wait(10)
+
+    # 删除必须很快失败（~0.1s），绝不能等 hook 释放；hook 等待 10s，若
+    # 删除在此处阻塞到 204，则超时逻辑失效，后续断言全部暴露。
+    # 删除必须很快失败，绝不能等 hook 释放：hook 等待 30s，而删除的默认
+    # 超时仅 10s。若删除阻塞到 hook 完成（→ 204），则超时逻辑失效。本测试
+    # 运行时间也因此被卡在 10s 左右，必须让 409 在 10s 内确定性触发。
+    # 旧实现会卡 30s，跑一次就足以暴露回归。
+    response = auth_client.delete(f"/api/users/{bob_id}")
+    assert response.status_code == 409
+    assert "正在收尾" in response.json()["detail"]
+
+    # 用户、配置、历史、目录都保留，用户仍被视为占用
+    users = auth_client.get("/api/users").json()
+    assert any(user["id"] == bob_id for user in users)
+    assert auth_client.get("/api/configs", headers=bob_headers).status_code == 200
+    with session_context() as session:
+        assert session.query(ComparisonRun).filter_by(user_id=bob_id).count() == 0
+    assert os.path.isdir(os.path.join(str(tmp_path), "app-data", "users", str(bob_id)))
+
+    # 完成收尾后再删除成功
+    release.set()
+    deadline = time.monotonic() + 10
+    while not job.finalized_event.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert auth_client.delete(f"/api/users/{bob_id}").status_code == 204
+    with session_context() as session:
+        assert session.query(ComparisonRun).filter_by(user_id=bob_id).count() == 0
+    web_api._job_manager.set_finished_hook(None)

@@ -1,0 +1,13 @@
+{"file":".trellis/tasks/08-23-fix-action-history-races/prd.md","reason":"Requirements, lifecycle invariants, acceptance criteria, and out-of-scope boundaries for the race fixes."}
+{"file":".trellis/tasks/08-23-fix-action-history-races/design.md","reason":"Backend transaction/guard design and frontend immutable download-context design to implement without weakening ownership or security."}
+{"file":".trellis/tasks/08-23-fix-action-history-races/implement.md","reason":"Ordered implementation scope, validation matrix, and risk checkpoints."}
+{"file":"src/backend/application/job_manager.py","reason":"cancel_all_for_user 等待循环不再持有 finalize 锁（轮询 finalized_event 使 while-else 超时生效）；删除 begin_project_rename/end_user_guard 上的 finalize 锁（对 fail-closed 正确性不必要且会造成 409 阻塞）；统一超时文案。"}
+{"file":"src/backend/application/comparison_history_service.py","reason":"record_job_finished 增加用户存在性检查，用户已删则跳过落库（防 SQLite id 复用错配 + 目录重建）。"}
+{"file":"frontend/src/App.vue","reason":"自动下载绑定提交时捕获的 jobId（经 useAutoDownload.committedJobId），切走项目仍下原任务；未切走走当前桶下载。"}
+{"file":"frontend/src/composables/useAutoDownload.js","reason":"新增 committedJobId/captureJobId 状态，自动下载上下文从模块级（跨重渲染稳定）捕获。"}
+{"file":"frontend/src/composables/useJob.js","reason":"新增 entryFor/downloadFor/downloadLogsFor：按 jobId 定位条目下载，不依赖活跃项目；download()/downloadLogs() 行为不变。"}
+{"file":"tests/test_job_manager.py","reason":"test_cancel_all_waits_for_terminal_hook 断言 JobFinalizationTimeoutError；test_cleanup_cap 改为 3 任务（2 finalize+1 未 finalize）验证只淘汰已 finalize；max_concurrent_jobs=3 防信号量排队干扰。"}
+{"file":"tests/test_user_delete_with_recycle.py","reason":"删除测试 hook 等待 30s > 默认超时 10s 使 409 确定性触发；修正目录断言为 app-data 路径。"}
+{"file":"tests/test_web_api_configs.py","reason":"改名测试 hook 等待 30s；尾部恢复 record_job_finished hook（否则 test_web_api_jobs 历史落库失败）；文案断言更新。"}
+{"file":"tests/test_web_api_history.py","reason":"新增 test_record_finished_skips_missing_user：已删用户任务结束后不落库、不重建目录。"}
+{"file":"frontend/src/__tests__/App.autoDownload.spec.js","reason":"断言更新为 download/downloadLogs（未切走）与 downloadFor/downloadLogsFor（切走）；新增捕获 jobId 用例。"}

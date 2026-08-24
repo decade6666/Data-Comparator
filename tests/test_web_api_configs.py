@@ -1,6 +1,7 @@
 """配置 CRUD API 测试：用户隔离、内置模板保护与导入导出。"""
 
 import json
+import time
 
 from src.backend.infrastructure.parameter_templates import (
     BUILTIN_TEMPLATE_CIMS,
@@ -156,6 +157,89 @@ def test_import_invalid_json(auth_client) -> None:
         files={"file": ("bad.json", b"not-json{", "application/json")},
     )
     assert response.status_code == 400
+
+
+def test_rename_rejected_while_job_unfinalized(
+    auth_client, tmp_path, monkeypatch
+) -> None:
+    """回归：项目存在未收尾任务（终态但 hook 未完成）时改名必须 409，
+    且项目文件与历史保持原样。收尾完成后改名成功并迁移历史。"""
+    import threading
+
+    from src.backend.application import job_manager as job_manager_module
+    from src.backend.application.comparison_history_service import (
+        record_job_finished,
+    )
+    from src.backend.infrastructure import database
+    from src.backend.infrastructure.database import init_db, session_context
+    from src.backend.infrastructure.models.comparison_run import ComparisonRun
+    from src.frontend import web_api
+
+    monkeypatch.setenv("DATASET_COMPARATOR_DATA_DIR", str(tmp_path / "app-data"))
+    database._engine = None
+    init_db()
+    auth_client.put("/api/configs/旧项目", json={"anchor_row_num": 2})
+
+    release = threading.Event()
+    hook_started = threading.Event()
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        return "/tmp/out/report.xlsx"
+
+    monkeypatch.setattr(job_manager_module, "run_comparison", fake_run_comparison)
+    web_api._job_manager.set_finished_hook(
+        lambda job: (
+            hook_started.set(),
+            release.wait(10),
+        )
+    )
+    job = web_api._job_manager.submit(
+        {"old_file_path": "o.xlsx", "new_file_path": "n.xlsx"},
+        config_name="旧项目",
+        user_id=1,
+    )
+    deadline = time.monotonic() + 10
+    while job.status.value != "completed" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert hook_started.wait(10)
+    assert not job.finalized_event.is_set()
+    assert web_api._job_manager.get_job(job.job_id) is not None
+
+    # 阻塞窗口内改名 → 409
+    response = auth_client.post(
+        "/api/configs/旧项目/rename", json={"new_name": "新项目"}
+    )
+    assert response.status_code == 409
+    assert "正在收尾" in response.json()["detail"]
+    assert auth_client.get("/api/configs/旧项目").status_code == 200
+    assert auth_client.get("/api/configs/新项目").status_code == 404
+
+    # 收尾完成后改名成功并迁移历史
+    release.set()
+    deadline = time.monotonic() + 10
+    while not job.finalized_event.is_set() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    # 收尾完成后改名成功并迁移历史
+    assert (
+        auth_client.post(
+            "/api/configs/旧项目/rename", json={"new_name": "新项目"}
+        ).status_code
+        == 200
+    )
+    with session_context() as session:
+        rows = session.query(ComparisonRun).filter_by(user_id=1).all()
+        assert all(r.config_name == "新项目" for r in rows)
+    # 恢复生产 hook：清成 None 会让后续依赖历史落库的测试（test_web_api_jobs）
+    # 拿不到历史行。
+    web_api._job_manager.set_finished_hook(record_job_finished)
 
 
 def test_rename_migrates_history_and_copy_does_not(

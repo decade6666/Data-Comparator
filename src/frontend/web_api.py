@@ -569,19 +569,28 @@ def rename_config(
         raise HTTPException(status_code=400, detail="不能修改内置模板")
     if request.new_name in BUILTIN_TEMPLATES:
         raise HTTPException(status_code=400, detail="不能覆盖内置模板")
-    repository = _repository_for(current_user.id)
-    document = repository.load_document(name)
-    if document is None:
-        raise HTTPException(status_code=404, detail="项目不存在")
-    if repository.load_document(request.new_name) is not None:
-        raise HTTPException(status_code=409, detail="目标项目已存在")
-    repository.save_document(request.new_name, document)
-    repository.delete_document(name)
-    # 历史行按 config_name 字符串挂靠；改名后迁移，否则历史被孤立。
-    # 复制（COPY）不迁移：副本是无历史的新项目。
-    with session_context() as session:
-        migrate_config_name(session, current_user.id, name, request.new_name)
-    return {"name": request.new_name, "renamed": True}
+    # 任务未收尾（含终态但历史 hook 未完成）时拒绝改名，避免新任务或
+    # 在途任务把历史写到旧项目名下；闸门持续到历史迁移完成。
+    if not _job_manager.begin_project_rename(current_user.id, name):
+        raise HTTPException(
+            status_code=409, detail="该项目仍有比对任务正在收尾，请稍后再改名"
+        )
+    try:
+        repository = _repository_for(current_user.id)
+        document = repository.load_document(name)
+        if document is None:
+            raise HTTPException(status_code=404, detail="项目不存在")
+        if repository.load_document(request.new_name) is not None:
+            raise HTTPException(status_code=409, detail="目标项目已存在")
+        repository.save_document(request.new_name, document)
+        repository.delete_document(name)
+        # 历史行按 config_name 字符串挂靠；改名后迁移，否则历史被孤立。
+        # 复制（COPY）不迁移：副本是无历史的新项目。
+        with session_context() as session:
+            migrate_config_name(session, current_user.id, name, request.new_name)
+        return {"name": request.new_name, "renamed": True}
+    finally:
+        _job_manager.end_project_rename(current_user.id)
 
 
 _EXPORT_STRIP_FIELDS = (

@@ -145,28 +145,43 @@ function resetAllJobs() {
   activeKey.value = ''
 }
 
+// 按 jobId 定位条目（不依赖当前活跃项目）；缺失返回 undefined。
+function entryFor(jobId) {
+  return Object.values(entries).find((entry) => entry.jobId === jobId)
+}
+
 async function download() {
   if (!jobId.value) return
+  await downloadFor(current.value)
+}
+
+async function downloadFor(entry) {
+  if (!entry || !entry.jobId) return
   await api.download(
-    `/jobs/${jobId.value}/download`,
-    outputName.value || '比对报告.xlsx'
+    `/jobs/${entry.jobId}/download`,
+    entry.outputName || '比对报告.xlsx'
   )
 }
 
 // 优先下载服务端落盘的日志文件；服务端不可用时退回浏览器内存 Blob
 async function downloadLogs() {
   if (!logLines.value.length) return
+  await downloadLogsFor(current.value)
+}
+
+async function downloadLogsFor(entry) {
+  if (!entry || !entry.jobId) return
   try {
     await api.download(
-      `/jobs/${jobId.value}/log`,
-      `比对日志-${outputName.value || 'log'}.txt`,
+      `/jobs/${entry.jobId}/log`,
+      `比对日志-${entry.outputName || 'log'}.txt`,
     )
   } catch (_err) {
-    const blob = new Blob([logLines.value.join('\n')], { type: 'text/plain' })
+    const blob = new Blob([entry.logLines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `比对日志-${outputName.value || 'log'}.txt`
+    a.download = `比对日志-${entry.outputName || 'log'}.txt`
     a.style.display = 'none'
     document.body.appendChild(a)
     a.click()
@@ -191,6 +206,9 @@ export function useJob() {
     cancel,
     download,
     downloadLogs,
+    entryFor,
+    downloadFor,
+    downloadLogsFor,
     reset,
     activateJob,
     dropJob,
