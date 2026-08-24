@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ...backend.application.job_manager import get_job_manager
+from ...backend.application.job_manager import (
+    JobFinalizationTimeoutError,
+    get_job_manager,
+)
 from ...backend.application.user_admin_service import UserAdminService
 from ...backend.infrastructure.database import get_session
 from ...backend.infrastructure.models.user import User
@@ -106,10 +109,27 @@ def delete_user(
     """硬删除用户：取消任务 → 配置入回收站 → 删目录 → 删 User 行。"""
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="不能删除自己")
+    manager = get_job_manager()
+    # 闸门必须在事务提交/回滚前持续持有：删除期间拒绝该用户新任务提交，
+    # 避免任务线程在用户行/目录删除后重建历史与结果目录（SQLite 用户 id 会复用）。
+    manager.begin_user_guard(user_id)
     try:
-        UserAdminService.delete_user(session, user_id, job_manager=get_job_manager())
-    except ValueError as exc:
-        detail = str(exc)
-        raise HTTPException(
-            status_code=404 if detail == "用户不存在" else 400, detail=detail
-        )
+        try:
+            UserAdminService.delete_user(session, user_id, job_manager=manager)
+            session.commit()
+        except JobFinalizationTimeoutError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            session.rollback()
+            detail = str(exc)
+            raise HTTPException(
+                status_code=404 if detail == "用户不存在" else 400, detail=detail
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        manager.end_user_guard(user_id)

@@ -83,6 +83,47 @@ def test_history_empty_for_new_user(auth_client):
     assert response.json() == []
 
 
+def test_record_finished_skips_missing_user(auth_client, tmp_path, monkeypatch):
+    """回归：用户已被删除后，历史 hook 不得落库，也不得重建用户目录。"""
+    import datetime
+
+    from src.backend.application.comparison_history_service import (
+        record_job_finished,
+    )
+    from src.backend.application.job_manager import JobState, JobStatus
+    from src.backend.infrastructure.file_runtime import get_user_data_dir
+
+    monkeypatch.setenv("DATASET_COMPARATOR_DATA_DIR", str(tmp_path / "app-data"))
+    database._engine = None
+    init_db()
+    bob_id = _create_user(auth_client, "bob", "bob-pass-123").json()["id"]
+    bob_dir = get_user_data_dir(bob_id)
+    os.makedirs(bob_dir, exist_ok=True)
+    params: ParameterDocument = {
+        "old_file_path": "o.xlsx",
+        "new_file_path": "n.xlsx",
+        "output_directory": "",
+    }
+    job = JobState(
+        job_id="ghost-job",
+        status=JobStatus.COMPLETED,
+        parameters=params,
+        config_name="项目A",
+        user_id=bob_id,
+        stop_flag=__import__("threading").Event(),
+        created_at=datetime.datetime(2026, 8, 23, 12, 0, 0),
+    )
+    with session_context() as session:
+        from src.backend.infrastructure.models.user import User
+
+        session.query(User).filter(User.id == bob_id).delete()
+        session.commit()
+
+    record_job_finished(job)
+    with session_context() as session:
+        assert session.query(ComparisonRun).filter_by(user_id=bob_id).count() == 0
+
+
 def test_history_lists_and_scopes_to_user(auth_client, tmp_path, monkeypatch):
     monkeypatch.setenv("DATASET_COMPARATOR_DATA_DIR", str(tmp_path / "app-data"))
     database._engine = None

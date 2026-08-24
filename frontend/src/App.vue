@@ -22,7 +22,12 @@ import CompareForm from './components/CompareForm.vue'
 import ActionBar from './components/ActionBar.vue'
 
 const { isDark, toggleTheme } = useTheme()
-const { enabled: autoDownloadEnabled, setEnabled: setAutoDownloadEnabled } = useAutoDownload()
+const {
+  enabled: autoDownloadEnabled,
+  setEnabled: setAutoDownloadEnabled,
+  committedJobId: autoDownloadJobId,
+  captureJobId,
+} = useAutoDownload()
 const { sidebarWidth, resizerStyle, startResize } = useSidebarResize()
 const job = useJob()
 const auth = useAuth()
@@ -63,6 +68,7 @@ async function startCompare() {
     const savedName = await autoSaveBeforeStart()
     if (!savedName) return
     await job.submit(buildJobPayload())
+    captureJobId(job.jobId.value)
   } catch (err) {
     ElMessage.error(err.message)
   }
@@ -81,21 +87,27 @@ function downloadReport() {
 }
 
 // ——— 自动下载：completed → 报告+日志；failed → 仅日志；cancelled 不触发 ———
-let autoDownloadedJobId = null
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function triggerAutoDownload(status) {
+// 捕获的 jobId 与当前活跃任务一致时走当前桶下载；不一致（提交后切走了
+// 项目）时经 entryFor 定位原项目条目下载，避免错下新项目的结果。
+async function triggerAutoDownload(status, jobId) {
+  const report = () =>
+    jobId === job.jobId.value ? job.download() : job.downloadFor(job.entryFor(jobId))
+  const logs = () =>
+    jobId === job.jobId.value
+      ? job.downloadLogs()
+      : job.downloadLogsFor(job.entryFor(jobId))
   try {
     if (status === 'completed') {
-      await job.download()
+      await report()
       // 串行 + 间隔降低浏览器多文件下载拦截概率；报告优先
       await sleep(800)
-      await job.downloadLogs()
+      await logs()
     } else if (status === 'failed') {
-      await job.downloadLogs()
+      await logs()
     }
   } catch (err) {
     ElMessage.warning('自动下载失败，请点击「下载报告」或「下载日志」手动下载')
@@ -106,9 +118,10 @@ watch(
   () => job.status.value,
   (next) => {
     if (!['completed', 'failed'].includes(next)) return
-    if (autoDownloadedJobId === job.jobId.value) return
-    autoDownloadedJobId = job.jobId.value
-    if (autoDownloadEnabled.value) triggerAutoDownload(next)
+    // 优先用提交时捕获的 jobId（切走项目也下原任务）；无捕获时回退当前任务。
+    const jobId = autoDownloadJobId.value || job.jobId.value
+    if (!jobId) return
+    if (autoDownloadEnabled.value) triggerAutoDownload(next, jobId)
   },
   { flush: 'post' }
 )

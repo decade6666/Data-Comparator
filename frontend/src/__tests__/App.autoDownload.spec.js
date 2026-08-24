@@ -7,11 +7,16 @@ vi.mock("element-plus", () => ({
 }));
 
 const autoDownloadEnabled = ref(true);
+const committedJobId = ref(null);
 
 vi.mock("../composables/useAutoDownload", () => ({
   useAutoDownload: () => ({
     enabled: autoDownloadEnabled,
     setEnabled: vi.fn(),
+    committedJobId,
+    captureJobId: vi.fn((id) => {
+      committedJobId.value = id;
+    }),
   }),
 }));
 
@@ -30,6 +35,9 @@ const jobMock = {
   cancel: vi.fn(),
   download: vi.fn(),
   downloadLogs: vi.fn(),
+  downloadFor: vi.fn(),
+  downloadLogsFor: vi.fn(),
+  entryFor: vi.fn(() => undefined),
   reset: vi.fn(),
 };
 
@@ -106,7 +114,11 @@ describe("App 自动下载策略", () => {
     });
     jobMock.download.mockReset().mockResolvedValue();
     jobMock.downloadLogs.mockReset().mockResolvedValue();
+    jobMock.downloadFor.mockReset().mockResolvedValue();
+    jobMock.downloadLogsFor.mockReset().mockResolvedValue();
+    jobMock.entryFor.mockReset().mockImplementation(() => undefined);
     autoDownloadEnabled.value = true;
+    committedJobId.value = null;
   });
 
   it("completed 触发报告和日志各一次", async () => {
@@ -177,5 +189,35 @@ describe("App 自动下载策略", () => {
     await flushPromises();
     await new Promise((r) => setTimeout(r, 1000));
     expect(jobMock.download).toHaveBeenCalledTimes(1);
+  });
+
+  it("提交后切换项目再完成：仍下载原项目（捕获的 jobId）", async () => {
+    await mountApp();
+    const submitted = {
+      jobId: ref("job-a"),
+      status: ref("running"),
+      progress: ref(50),
+      progressMessage: ref("处理中"),
+      logLines: ref([]),
+      logCursor: ref(0),
+      outputPath: ref(null),
+      error: ref(null),
+      outputName: ref(""),
+    };
+    // 模拟 startCompare 提交后捕获 job-a（切走前）
+    committedJobId.value = "job-a";
+    jobMock.entryFor.mockImplementation((id) =>
+      id === "job-a" ? submitted : undefined
+    );
+    // 完成后活跃项目已切走：jobId 指向新任务
+    jobMock.jobId.value = "job-b";
+    jobMock.status.value = "completed";
+    await nextTick();
+    await flushPromises();
+    await new Promise((r) => setTimeout(r, 1000));
+    // 下载的是捕获的 job-a（经 entryFor 解析到原条目），而非活跃的 job-b
+    expect(jobMock.downloadFor).toHaveBeenCalledWith(submitted);
+    expect(jobMock.downloadLogsFor).toHaveBeenCalledWith(submitted);
+    expect(jobMock.download).not.toHaveBeenCalled();
   });
 });

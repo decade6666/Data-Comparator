@@ -66,7 +66,11 @@ def test_reads_full_data_when_dimension_declares_a1(dim_broken_xlsx) -> None:
     """dimension 声明 A1 时仍应读到全部行与列。"""
     messages = []
     df = read_single_sheet_from_excel(
-        dim_broken_xlsx, "S1", anchor_row_num=2, header_row_num=1, log_func=messages.append
+        dim_broken_xlsx,
+        "S1",
+        anchor_row_num=2,
+        header_row_num=1,
+        log_func=messages.append,
     )
     assert df is not None
     # 5 行 - 2（表头 + 锚点）= 3 行数据；4 列

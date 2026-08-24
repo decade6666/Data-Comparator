@@ -54,6 +54,10 @@ _TERMINAL_STATUSES = frozenset(
 JobFinishedHook = Callable[["JobState"], None]
 
 
+class JobFinalizationTimeoutError(TimeoutError):
+    """等待任务收尾（历史 hook 完成）超时。用户删除/项目改名据此失败关闭。"""
+
+
 @dataclass
 class JobState:
     """单个比对任务的运行状态，所有可变字段在 lock 保护下读写。"""
@@ -102,6 +106,38 @@ class JobManager:
         self._max_concurrent_jobs = max(1, max_concurrent_jobs)
         self._semaphore = threading.Semaphore(self._max_concurrent_jobs)
         self._finished_hook = on_finished
+        # 用户级生命周期闸门：删除/改名期间拒绝该用户的新任务提交。
+        self._user_guarded: set = set()
+        self._renaming_users: set = set()
+
+    def begin_user_guard(self, user_id: int) -> None:
+        """登记用户删除闸门；持有期间拒绝该用户新提交，直到 end_user_guard。"""
+        with self._lock:
+            self._user_guarded.add(user_id)
+
+    def end_user_guard(self, user_id: int) -> None:
+        with self._lock:
+            self._user_guarded.discard(user_id)
+            self._renaming_users.discard(user_id)
+
+    def begin_project_rename(self, user_id: int, config_name: str) -> bool:
+        """检查并登记项目改名：存在未收尾任务时返回 False，否则登记改名闸门。"""
+        with self._lock:
+            if user_id in self._user_guarded:
+                return False
+            for job in self._jobs.values():
+                if (
+                    job.user_id == user_id
+                    and job.config_name == config_name
+                    and not job.finalized_event.is_set()
+                ):
+                    return False
+            self._renaming_users.add(user_id)
+            return True
+
+    def end_project_rename(self, user_id: int) -> None:
+        with self._lock:
+            self._renaming_users.discard(user_id)
 
     def has_active_job(self) -> bool:
         with self._lock:
@@ -116,13 +152,18 @@ class JobManager:
         限制，超限任务保持 pending 排队。
         """
         with self._lock:
+            if user_id in self._user_guarded:
+                raise ValueError("用户正在删除，无法提交新任务")
+            if user_id in self._renaming_users:
+                raise ValueError("项目正在改名，请稍后再提交")
             active_job_id = self._user_active.get(user_id)
             if active_job_id:
                 active_job = self._jobs.get(active_job_id)
-                # 终态任务在 finalize 清理映射前存在一个很短的窗口；
-                # 必须等历史 hook 完成，避免硬删用户与落库并发。
-                if active_job is None or (
-                    active_job.status in _TERMINAL_STATUSES
+                # 只有映射指向「终态且已 finalize」的任务才可安全复用；
+                # 缺失映射（任务被清理）视为占用，fail closed。
+                if (
+                    active_job is not None
+                    and active_job.status in _TERMINAL_STATUSES
                     and active_job.finalized_event.is_set()
                 ):
                     del self._user_active[user_id]
@@ -176,16 +217,16 @@ class JobManager:
             }
 
     def cancel_all_for_user(self, user_id: int, timeout: float = 10.0) -> int:
-        """取消指定用户所有非终态任务并等待其结束，返回取消数量。
+        """取消指定用户所有未收尾任务并等待其 finalize，返回取消数量。
 
-        用户硬删除前调用；等待时间超过 ``timeout`` 时放弃等待（删除流程继续）。
+        用户硬删除前调用；等待时间超过 ``timeout`` 时抛
+        ``JobFinalizationTimeoutError`` 失败关闭（删除流程中止）。
         """
         with self._lock:
             targets = [
                 job
                 for job in self._jobs.values()
-                if job.user_id == user_id
-                and job.status in (JobStatus.PENDING, JobStatus.RUNNING)
+                if job.user_id == user_id and not job.finalized_event.is_set()
             ]
         for job in targets:
             with job.lock:
@@ -193,12 +234,14 @@ class JobManager:
                     job.stop_flag.set()
         deadline = time.monotonic() + timeout
         for job in targets:
-            while time.monotonic() < deadline:
-                with job.lock:
-                    terminal = job.status in _TERMINAL_STATUSES
-                if terminal and job.finalized_event.is_set():
-                    break
+            # 只轮询 finalized_event，不持有 finalize 的互斥：hook 线程持锁期间
+            # 等待方必须能判定超时并失败关闭，否则删除/改名请求会无限阻塞。
+            while time.monotonic() < deadline and not job.finalized_event.is_set():
                 time.sleep(0.02)
+            if not job.finalized_event.is_set():
+                raise JobFinalizationTimeoutError(
+                    "用户 {} 仍有任务正在收尾，删除已中止".format(user_id)
+                )
         return len(targets)
 
     def cancel_job(
@@ -232,13 +275,16 @@ class JobManager:
             for job in list(self._jobs.values()):
                 if (
                     job.status in _TERMINAL_STATUSES
+                    and job.finalized_event.is_set()
                     and job.finished_at is not None
                     and job.finished_at <= deadline
                 ):
                     del self._jobs[job.job_id]
                     removed += 1
             remaining_terminal = [
-                job for job in self._jobs.values() if job.status in _TERMINAL_STATUSES
+                job
+                for job in self._jobs.values()
+                if job.status in _TERMINAL_STATUSES and job.finalized_event.is_set()
             ]
             excess = len(self._jobs) - self._max_jobs
             if excess > 0:
@@ -363,15 +409,19 @@ class JobManager:
         run_started: datetime.datetime,
         work_dir: Optional[str],
     ) -> None:
+        # 顺序不变：日志落盘 → 清理 work_dir → hook（历史落库）→ 释放用户槽位
+        # → finalized 最后设置。等待方只轮询 finalized_event，无需互斥。
         self._persist_job_log(job, run_started)
         if work_dir:
             shutil.rmtree(work_dir, ignore_errors=True)
         # 必须在 finally 清理完成后触发：排队取消也要进入历史记录。
         self._notify_finished(job)
-        job.finalized_event.set()
         with self._lock:
             if self._user_active.get(job.user_id) == job_id:
                 del self._user_active[job.user_id]
+        # finalized 必须最后设置：可见后用户即可提交新任务，而当前任务
+        # 的清理/落库已全部完成。
+        job.finalized_event.set()
 
     def _persist_job_log(self, job: JobState, run_started: datetime.datetime) -> None:
         with job.lock:
