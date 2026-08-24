@@ -50,7 +50,18 @@ pip install -e .[performance]
 cd frontend && npm run dev
 ```
 
-部署说明：静态目录可通过环境变量 `DATASET_COMPARATOR_STATIC_DIR` 覆盖（默认指向仓库内 `frontend/dist`）；子路径部署需在构建时设置 `VITE_BASE_PATH`。
+部署说明：静态目录可通过环境变量 `DATASET_COMPARATOR_STATIC_DIR` 覆盖（默认指向仓库内 `frontend/dist`）。构建产物使用相对资源路径并在运行时推导 API 前缀，支持任意子路径反向代理（`proxy_pass` 剥离前缀即可），nginx 无需改写 JS/HTML。如需覆盖自动推导，可在构建前设置 `VITE_BASE_PATH`。
+
+子路径反向代理示例（`proxy_pass` 末尾的 `/` 用于剥离 `/dataset` 前缀）：
+
+```nginx
+location = /dataset { return 301 /dataset/; }
+location /dataset/ {
+    proxy_pass http://127.0.0.1:8888/;
+}
+```
+
+该配置不需要 `sub_filter`、`proxy_set_header Accept-Encoding ""` 或其他前端内容改写规则。
 
 ### 生产环境部署（后台运行）
 

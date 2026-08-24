@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "postbuild": "grep -Eq '(src|href)=\"(\\./assets/|/[^\"]+/assets/|https?://[^\"]+/assets/)' dist/index.html && ! grep -Eq '(src|href)=\"/assets/' dist/index.html || { echo 'dist uses invalid asset paths (base regression)'; exit 1; }",
     "test": "vitest run",
     "lint": "eslint --ext .js,.vue src",
     "format": "prettier --write \"src/**/*.{js,vue}\""
