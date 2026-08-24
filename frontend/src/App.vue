@@ -7,6 +7,7 @@ import { useSidebarResize } from './composables/useSidebarResize'
 import { useJob } from './composables/useJob'
 import { config, buildJobPayload } from './composables/useConfig'
 import { autoSaveBeforeStart } from './composables/useConfigState'
+import { resetAllJobs } from './composables/useJob'
 import { useAuth } from './composables/useAuth'
 import { useSheets } from './composables/useSheets'
 import { PARAMETER_DESCRIPTIONS } from './constants/parameterDescriptions'
@@ -104,7 +105,7 @@ function logout() {
   helpVisible.value = false
   auth.logout()
   resetSheets()
-  job.reset()
+  resetAllJobs()
 }
 
 function openPasswordFromSettings() {

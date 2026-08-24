@@ -7,6 +7,7 @@ import {
   saveCurrentConfig,
 } from './useConfig.js'
 import { resetSheets, restoreSheetsFromConfig } from './useSheets.js'
+import { activateJob, dropJob } from './useJob.js'
 
 export const LAST_CONFIG_STORAGE_KEY = 'dc_last_config'
 
@@ -33,6 +34,7 @@ function clone(value) {
 function rememberConfig(name) {
   currentName.value = name
   localStorage.setItem(lastConfigStorageKey(), name)
+  activateJob(name)
 }
 
 export const isDirty = computed(() => {
@@ -77,11 +79,14 @@ export function revertConfig() {
 }
 
 export function clearSelectedConfig() {
+  const previousName = currentName.value
   currentName.value = ''
   savedSnapshot.value = null
   localStorage.removeItem(lastConfigStorageKey())
   Object.assign(config, emptyConfig())
   resetSheets()
+  if (previousName) dropJob(previousName)
+  activateJob('')
 }
 
 export async function restoreLastConfig(availableNames) {
@@ -94,9 +99,15 @@ export async function restoreLastConfig(availableNames) {
   return true
 }
 
-export function openNewConfigDialog() {
+export function openNewConfigDialog(options = {}) {
   if (newConfigResolver) newConfigResolver(null)
   dialogBackup = clone(config)
+  // blank：新建项目从空白开始（不带入上一个项目的文件与参数）；
+  // 保存/自动保存路径调用时无此参数，保留当前内容。
+  if (options.blank) {
+    Object.assign(config, emptyConfig())
+    resetSheets()
+  }
   newConfigVisible.value = true
   return new Promise((resolve) => {
     newConfigResolver = resolve
@@ -112,7 +123,10 @@ export function resolveNewConfigDialog(name) {
 }
 
 export function cancelNewConfigDialog() {
-  if (dialogBackup) Object.assign(config, dialogBackup)
+  if (dialogBackup) {
+    Object.assign(config, dialogBackup)
+    restoreSheetsFromConfig() // config 还原后同步扫描结果
+  }
   dialogBackup = null
   const resolver = newConfigResolver
   newConfigResolver = null
