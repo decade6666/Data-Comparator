@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """用户硬删除测试：配置入回收站/任务取消/目录清理/token 失效。"""
 
+import datetime
 import os
 import threading
 import time
@@ -38,6 +39,20 @@ def test_delete_user_recycles_configs_and_removes_dir(auth_client, tmp_path) -> 
     auth_client.put(
         "/api/configs/配置B", json={"anchor_row_num": 2}, headers=bob_headers
     )
+    from src.backend.infrastructure.database import session_context
+    from src.backend.infrastructure.models.comparison_run import ComparisonRun
+
+    with session_context() as session:
+        session.add(
+            ComparisonRun(
+                user_id=bob_id,
+                job_id="history-before-delete",
+                config_name="配置A",
+                status="completed",
+                parameters_json="{}",
+                finished_at=datetime.datetime.now(),
+            )
+        )
 
     response = auth_client.delete(f"/api/users/{bob_id}")
     assert response.status_code == 204
@@ -45,6 +60,8 @@ def test_delete_user_recycles_configs_and_removes_dir(auth_client, tmp_path) -> 
     # User 行删除
     users = auth_client.get("/api/users").json()
     assert all(user["id"] != bob_id for user in users)
+    with session_context() as session:
+        assert session.query(ComparisonRun).filter_by(user_id=bob_id).count() == 0
     # 已删除用户的 token 立即失效
     assert auth_client.get("/api/configs", headers=bob_headers).status_code == 401
 
@@ -59,11 +76,12 @@ def test_delete_user_recycles_configs_and_removes_dir(auth_client, tmp_path) -> 
     assert all(entry["original_owner_username"] == "bob" for entry in entries)
 
 
-def test_delete_user_cancels_running_job(auth_client, monkeypatch) -> None:
+def test_delete_user_cancels_running_job(auth_client, monkeypatch, tmp_path) -> None:
     from src.backend.application import job_manager as job_manager_module
     from src.frontend import web_api
 
     bob_id = _create_user(auth_client, "bob", "bob-pass-123").json()["id"]
+    parameters = {**MINIMAL_PARAMS, "output_directory": str(tmp_path)}
 
     def fake_run_comparison(
         parameters,
@@ -72,6 +90,7 @@ def test_delete_user_cancels_running_job(auth_client, monkeypatch) -> None:
         progress_func=None,
         stop_flag=None,
         work_dir=None,
+        now=None,
     ):
         if stop_flag is not None:
             stop_flag.wait(10)
@@ -80,7 +99,7 @@ def test_delete_user_cancels_running_job(auth_client, monkeypatch) -> None:
         return "/tmp/out/report.xlsx"
 
     monkeypatch.setattr(job_manager_module, "run_comparison", fake_run_comparison)
-    job = web_api._job_manager.submit(MINIMAL_PARAMS, config_name="web", user_id=bob_id)
+    job = web_api._job_manager.submit(parameters, config_name="web", user_id=bob_id)
     deadline = time.monotonic() + 10
     while job.status != JobStatus.RUNNING and time.monotonic() < deadline:
         time.sleep(0.01)

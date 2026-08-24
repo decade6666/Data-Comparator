@@ -35,6 +35,9 @@ FastAPI 接口：
 - `GET /api/jobs/{job_id}`：轮询任务状态（`?since=N` 只返回新增日志）。
 - `POST /api/jobs/{job_id}/cancel`：停止任务。
 - `GET /api/jobs/{job_id}/download`：下载比对报告。
+- `GET /api/jobs/{job_id}/log`：下载当前任务日志（落盘于用户结果目录，与报告成对）。
+- `GET /api/history`：历史比对记录列表（`?config_name=...` 按项目过滤，`?limit=` 上限 100，默认 20）。
+- `GET /api/history/{run_id}`：历史详情（含参数快照）；`/report`、`/log` 下载对应文件；跨用户 404、文件已清理 410。
 - `POST /api/upload`：上传 Excel（`.xlsx`/`.xls`，默认 200MB）。
 - `GET /api/browse`：浏览服务器目录（白名单 `DATASET_COMPARATOR_BROWSE_ROOTS`）。
 - `GET /api/sheets`：读取文件 Sheet 名称。

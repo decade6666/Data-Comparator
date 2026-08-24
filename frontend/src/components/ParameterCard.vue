@@ -8,6 +8,7 @@ const props = defineProps({
   type: { type: String, required: true },
   value: { type: [Array, Object], default: () => [] },
   description: { type: String, default: '' },
+  readonly: { type: Boolean, default: false },
 })
 
 defineEmits(['edit'])
@@ -54,6 +55,7 @@ const tooltip = computed(() => props.description || parameterDescription(props.t
       </div>
     </div>
     <el-button
+      v-if="!readonly"
       :icon="Edit"
       size="small"
       title="修改"

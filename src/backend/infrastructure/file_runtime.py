@@ -188,6 +188,16 @@ def get_user_data_dir(user_id: int) -> str:
     return user_dir
 
 
+def get_user_results_dir(user_id: int) -> str:
+    """某用户的比对结果目录：<data>/users/<uid>/results。
+
+    比对报告与日志文件都落在此目录，历史记录接口按行内 basename 在此拼接。
+    """
+    results_dir = os.path.join(get_user_data_dir(user_id), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    return results_dir
+
+
 def get_app_temp_dir() -> str:
     appname = "PyDataCompare"
     appauthor = "YourCompanyOrAuthor"

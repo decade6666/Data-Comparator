@@ -153,19 +153,26 @@ async function download() {
   )
 }
 
-// 将累积的日志行导出为 .txt 文件（纯前端 Blob 下载，无需后端端点）
-function downloadLogs() {
+// 优先下载服务端落盘的日志文件；服务端不可用时退回浏览器内存 Blob
+async function downloadLogs() {
   if (!logLines.value.length) return
-  const blob = new Blob([logLines.value.join('\n')], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `比对日志-${outputName.value || 'log'}.txt`
-  a.style.display = 'none'
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+  try {
+    await api.download(
+      `/jobs/${jobId.value}/log`,
+      `比对日志-${outputName.value || 'log'}.txt`,
+    )
+  } catch (_err) {
+    const blob = new Blob([logLines.value.join('\n')], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `比对日志-${outputName.value || 'log'}.txt`
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+  }
 }
 
 export { activateJob, dropJob, renameJob, resetAllJobs }
