@@ -273,11 +273,6 @@ body {
   color: var(--color-text-secondary);
 }
 
-.progress-status {
-  font-weight: 600;
-  color: var(--color-primary);
-}
-
 /* ——— 面板头部右侧操作区 ——— */
 .panel-header-actions {
   display: flex;
