@@ -21,20 +21,6 @@ const displayProgress = computed(() =>
   props.status === 'idle' ? 0 : props.progress
 )
 
-const statusText = computed(() => {
-  if (props.scanning) return '扫描文件中…'
-  const map = {
-    idle: '准备就绪',
-    pending: '等待中',
-    running: '处理中',
-    completed: '比对完成',
-    failed: '比对失败',
-    cancelled: '已停止',
-    cancelling: '正在停止…',
-  }
-  return map[props.status] || '准备就绪'
-})
-
 const barColor = computed(() => {
   if (props.status === 'failed') return '#ef4444'
   if (props.status === 'cancelled') return '#f59e0b'
@@ -93,7 +79,6 @@ const barColor = computed(() => {
     <div class="panel-body">
       <div class="progress-label">
         <span>{{ props.scanning ? `扫描文件中…` : message }}</span>
-        <span class="progress-status">{{ statusText }} · {{ Math.round(displayProgress) }}%</span>
       </div>
       <el-progress
         :percentage="Math.round(displayProgress)"
