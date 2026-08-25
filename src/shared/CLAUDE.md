@@ -35,7 +35,7 @@
 - 行配置：`anchor_row_num`、`header_row_num`
 - 内容标记：`anchor_row_content`、`header_row_content`
 - 并发与合并：`max_workers`、`merge_deleted_data`
-- 比对参数：`common_cols`、`exclude_sheets`、`default_keys`、`sheet_key_map`、`include_sheets`、`ignore_cols`、`sheet_ignore_cols`、`sheet_order`
+- 比对参数：`common_cols`、`sheet_common_cols`、`exclude_sheets`、`default_keys`、`sheet_key_map`、`include_sheets`、`ignore_cols`、`sheet_ignore_cols`、`sheet_order`
 - 颜色：`colors`
 
 ## 测试与质量

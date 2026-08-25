@@ -130,7 +130,7 @@ pytest --cov=src --cov-report=term-missing
 - 处理配置持久化时优先查看 `src/backend/infrastructure/parameter_repository.py`。
 - 处理停止/取消任务时必须检查 `processing_control.py`、相关测试与 `InterruptedError` 传播链。
 - 修改公共契约时同步检查 `src/shared/contracts.py`、Web API 请求模型、配置仓库与测试。
-- 处理 include_sheets / ignore_cols / sheet_ignore_cols / sheet_order 配置时检查 `src/shared/contracts.py`、`src/frontend/web_api.py`、`src/backend/infrastructure/config_manager.py` 与 `src/backend/domain/data_comparison.py` 中的单点过滤逻辑（`compare_columns_by_sas_names`）。
+- 处理 include_sheets / ignore_cols / sheet_ignore_cols / sheet_order / common_cols / sheet_common_cols 配置时检查 `src/shared/contracts.py`、`src/frontend/web_api.py`、`src/backend/infrastructure/config_manager.py` 与 `src/backend/domain/data_comparison.py` 中的单点过滤逻辑（`compare_columns_by_sas_names`；排除字段在 `read_single_sheet_from_excel` 的 `cols_to_drop`）。
 - 安全要求：不要硬编码密钥；不要打印或写入敏感路径以外的数据内容；不要将用户 Excel 内容写入文档或日志样例。
 - Git 要求：不主动提交；提交前必须查看 diff；禁止 force push 到 `main`/`master`。
 
@@ -138,6 +138,7 @@ pytest --cov=src --cov-report=term-missing
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-08-24 | feat | 排除字段支持按表单单独配置（新增 `sheet_common_cols`，整体替换语义，与 sheet_ignore_cols 一致）；排除字段编辑器与忽略字段/锚点统一为表格，「表单」列与「比对表单」改为可搜索下拉（候选来自扫描结果，支持手输/清空），参数卡片加浅色分隔线；修复 applyDocument 缺键不重置导致切换配置残留上一项目参数。 |
 | 2026-08-23 | feat | 比对操作区重构：开始/停止/下载/保存收敛到底部吸底「操作」卡片，开始比对大按钮醒目、保存/取消保存改图标+悬停提示；完成后自动下载报告与日志（设置可关）；新增比对历史记录（服务端日志落盘成对文件、`comparison_run` 表持久化、`/api/history` 系列接口与历史弹窗）；修复排队任务取消后 `_user_active` 泄漏。 |
 | 2026-08-24 | fix | 修复比对历史并发与自动下载竞态：删除/改名闸门互斥（删除在改名在途时 409、同用户并发改名拒绝）；`cancel_all_for_user` 轮询 finalized_event 超时失败关闭（hook 卡住不再无限阻塞）；`record_job_finished` 检查用户存在性（已删用户跳过落库）；前端自动下载改为任务级触发（useJob 轮询终态回调 + 冻结快照 + jobId 去重），切走项目仍下原任务。 |
 | 2026-08-20 | fix | xlsx 筛选器清理改用保留原始命名空间和 zip 顺序的字节级 OOXML 重写，移除 Linux 不可用的 pywin32/ElementTree 路径，补充表格筛选器、隐藏行和中断传播测试。 |
