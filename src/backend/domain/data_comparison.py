@@ -115,6 +115,21 @@ def process_single_sheet_complete(
         anchor_row_num = config.anchor_row_num
         header_row_num = config.header_row_num
 
+        # 解析当前Sheet使用的排除字段（整体替换语义，与指定锚点列/指定忽略字段一致）
+        # 排除字段在读取期物理删列，早于锚点解析与差异比对
+        sheet_common_cols = getattr(config, "sheet_common_cols", None) or {}
+        if sheet_name in sheet_common_cols:
+            effective_cols_to_drop = list(sheet_common_cols.get(sheet_name) or [])
+            log_func(
+                f"ℹ️ Sheet [{sheet_name}] 使用指定排除字段: {effective_cols_to_drop}"
+            )
+        else:
+            effective_cols_to_drop = list(config.common_cols_to_drop or [])
+            if effective_cols_to_drop:
+                log_func(
+                    f"ℹ️ Sheet [{sheet_name}] 使用全局排除字段: {effective_cols_to_drop}"
+                )
+
         # 1. 读取旧版本和新版本文件中的单个Sheet数据
         # log_func(f"读取旧版本文件：[{sheet_name}]")
         # read_single_sheet_from_excel 返回 DataFrame 和 None（因为不再需要原始工作表对象进行格式复制）
@@ -124,8 +139,8 @@ def process_single_sheet_complete(
             anchor_row_num,
             header_row_num,
             log_func,
-            config.common_cols_to_drop,
-            stop_flag,
+            cols_to_drop=effective_cols_to_drop,
+            stop_flag=stop_flag,
         )
         new_df_raw = read_single_sheet_from_excel(
             new_path,
@@ -133,8 +148,8 @@ def process_single_sheet_complete(
             anchor_row_num,
             header_row_num,
             log_func,
-            config.common_cols_to_drop,
-            stop_flag,
+            cols_to_drop=effective_cols_to_drop,
+            stop_flag=stop_flag,
         )
 
         old_df = old_df_raw if old_df_raw is not None else None
@@ -354,6 +369,16 @@ def process_single_sheet_complete(
                 else:
                     key_cols = config.default_keys
                     log_func(f"ℹ️ Sheet [{sheet_name}] 使用默认锚点列: {key_cols}")
+
+                # 排除字段在读取期已物理删列；若误删锚点列，锚点将整体失效
+                dropped_keys = [
+                    col for col in effective_cols_to_drop if col in key_cols
+                ]
+                if dropped_keys:
+                    log_func(
+                        f"⚠️ Sheet [{sheet_name}] 排除字段包含锚点列 {dropped_keys}，"
+                        f"该表单锚点将失效"
+                    )
 
                 # 解析当前Sheet使用的忽略比对字段（整体替换语义，与指定锚点列一致）
                 if sheet_name in config.sheet_ignore_cols:

@@ -8,7 +8,11 @@ from src.backend.infrastructure.parameter_templates import (
     BUILTIN_TEMPLATE_TM,
 )
 
-MINIMAL_DOC = {"anchor_row_num": 1, "common_cols": ["STUDYID"]}
+MINIMAL_DOC = {
+    "anchor_row_num": 1,
+    "common_cols": ["STUDYID"],
+    "sheet_common_cols": {"AE": ["SUBINI"]},
+}
 
 
 def test_list_configs_includes_builtin_templates(auth_client) -> None:
@@ -149,6 +153,8 @@ def test_export_strips_file_and_sheet_fields(auth_client) -> None:
         assert field not in body
     assert body["anchor_row_num"] == MINIMAL_DOC["anchor_row_num"]
     assert body["common_cols"] == MINIMAL_DOC["common_cols"]
+    # per-sheet 排除字段是比对参数，必须随导出文件外发（_EXPORT_STRIP_FIELDS 不得剥离）
+    assert body["sheet_common_cols"] == MINIMAL_DOC["sheet_common_cols"]
 
 
 def test_import_invalid_json(auth_client) -> None:

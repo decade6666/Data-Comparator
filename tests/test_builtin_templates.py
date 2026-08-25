@@ -27,3 +27,9 @@ def test_builtin_template_document_matches_constant(tmp_path) -> None:
     template_name = next(iter(BUILTIN_TEMPLATES))
     document = repo.load_document(template_name)
     assert document == BUILTIN_TEMPLATES[template_name]
+
+
+def test_builtin_templates_declare_sheet_common_cols() -> None:
+    """两个内置模板都应显式声明 per-sheet 排除字段（缺键会残留上一个项目配置）。"""
+    for name, document in BUILTIN_TEMPLATES.items():
+        assert document["sheet_common_cols"] == {}, name

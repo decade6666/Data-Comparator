@@ -45,6 +45,7 @@ def _make_job(
         "old_file_upload_id": "up_old",
         "new_file_upload_id": "up_new",
         "include_sheets": ["Sheet1"],
+        "sheet_common_cols": {"AE": ["SUBINI"]},
     }
     return JobState(
         job_id=job_id,
@@ -84,6 +85,8 @@ def test_record_run_strips_sensitive_fields(session, tmp_path):
     ):
         assert field not in params
     assert params["include_sheets"] == ["Sheet1"]
+    # per-sheet 排除字段是比对参数，历史快照必须保留（_STRIP_PARAMETER_FIELDS 不得剥离）
+    assert params["sheet_common_cols"] == {"AE": ["SUBINI"]}
 
 
 def test_record_run_failed_has_no_report(session, tmp_path):

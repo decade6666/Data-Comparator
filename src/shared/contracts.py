@@ -24,6 +24,7 @@ class ParameterDocument(TypedDict, total=False):
     max_workers: int
     merge_deleted_data: bool
     common_cols: List[str]
+    sheet_common_cols: Dict[str, List[str]]
     exclude_sheets: List[str]
     default_keys: List[str]
     sheet_key_map: Dict[str, List[str]]

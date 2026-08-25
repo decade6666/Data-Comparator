@@ -72,6 +72,10 @@ def _mark(wb, sheet):
     return ws.cell(row=2, column=mark_col).value
 
 
+def _headers(wb, sheet):
+    return [c.value for c in wb[sheet][1]]
+
+
 @pytest.mark.integration
 def test_include_sheets_and_order(workbooks, tmp_path):
     old_path, new_path = workbooks
@@ -139,3 +143,80 @@ def test_sheet_ignore_cols_replaces_global(workbooks, tmp_path):
     assert _mark(wb, "AE") == "更新"
     # DM 无 per-sheet 覆盖 → 全局忽略 UPDATETIME 仍生效 → 未改变
     assert _mark(wb, "DM") == "未改变"
+
+
+@pytest.mark.integration
+def test_global_common_cols_drops_columns(workbooks, tmp_path):
+    old_path, new_path = workbooks
+    out_path = os.path.join(str(tmp_path), "out.xlsx")
+    wb = _run(
+        old_path,
+        new_path,
+        out_path,
+        {
+            "common_cols": ["UPDATETIME"],
+            "include_sheets": ["AE", "DM"],
+        },
+    )
+    # 排除字段在读取期物理删列：AE/DM 表头均无该列
+    assert "UPDATETIME" not in _headers(wb, "AE")
+    assert "UPDATETIME" not in _headers(wb, "DM")
+    # 未排除的列照常输出
+    assert "AEMODIFY" in _headers(wb, "AE")
+    # 排除 UPDATETIME 后 AE 仍有 AEMODIFY 变化 → 更新；DM 无剩余变化 → 未改变
+    assert _mark(wb, "AE") == "更新"
+    assert _mark(wb, "DM") == "未改变"
+
+
+@pytest.mark.integration
+def test_sheet_common_cols_replaces_global(workbooks, tmp_path):
+    old_path, new_path = workbooks
+    out_path = os.path.join(str(tmp_path), "out.xlsx")
+    wb = _run(
+        old_path,
+        new_path,
+        out_path,
+        {
+            "common_cols": ["UPDATETIME"],
+            "sheet_common_cols": {"AE": ["AEMODIFY"]},
+            "include_sheets": ["AE", "DM"],
+        },
+    )
+    # AE 整体替换为排除 AEMODIFY（UPDATETIME 不再被排除）
+    # （若错误实现为叠加，UPDATETIME 会被一起删除，此断言失败）
+    assert "AEMODIFY" not in _headers(wb, "AE")
+    assert "UPDATETIME" in _headers(wb, "AE")
+    # 剩余 UPDATETIME 有变化 → 更新
+    assert _mark(wb, "AE") == "更新"
+    # DM 未命中 per-sheet → 回退全局排除 UPDATETIME
+    assert "UPDATETIME" not in _headers(wb, "DM")
+
+
+@pytest.mark.integration
+def test_sheet_common_cols_empty_list_disables_global(workbooks, tmp_path):
+    old_path, new_path = workbooks
+    out_path = os.path.join(str(tmp_path), "out.xlsx")
+    wb = _run(
+        old_path,
+        new_path,
+        out_path,
+        {
+            "common_cols": ["UPDATETIME"],
+            "sheet_common_cols": {"AE": []},
+            "include_sheets": ["AE", "DM"],
+        },
+    )
+    # 空列表 = 该表单什么都不删（若误用真值判断，会静默回退全局排除）
+    assert "UPDATETIME" in _headers(wb, "AE")
+    assert "AEMODIFY" in _headers(wb, "AE")
+    # DM 未命中 per-sheet → 仍按全局排除
+    assert "UPDATETIME" not in _headers(wb, "DM")
+
+
+def test_config_manager_defaults_sheet_common_cols():
+    cm = ConfigManager()
+    assert cm.sheet_common_cols == {}
+    # 老配置缺 sheet_common_cols 键 → 回退空字典，仅全局生效
+    cm.update_from_parameters({"common_cols": ["A"]}, {})
+    assert cm.sheet_common_cols == {}
+    assert cm.common_cols_to_drop == ["A"]
