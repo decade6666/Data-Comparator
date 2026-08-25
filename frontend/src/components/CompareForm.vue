@@ -17,10 +17,31 @@ const editing = ref(null)
 const { allSheets, scanFile, resetSheets } = useSheets()
 
 const CARDS = [
-  { key: 'common_cols', title: '排除字段', type: 'list', hint: '读取时直接丢弃的列' },
+  {
+    key: 'common_cols',
+    title: '排除字段',
+    type: 'fields',
+    globalKey: 'common_cols',
+    perSheetKey: 'sheet_common_cols',
+    hint: '单参数为全局排除字段，双参数为指定表单排除字段（整体替换全局）',
+  },
   { key: 'sheet_scope', title: '比对表单', type: 'sheets', hint: '只需勾选要比对的扫描结果' },
-  { key: 'ignore_settings', title: '忽略字段', type: 'fields', hint: '单参数为全局字段，双参数为指定表单字段' },
-  { key: 'anchor_settings', title: '锚点', type: 'anchors', hint: '单参数为默认锚点，双参数为指定表单锚点' },
+  {
+    key: 'ignore_settings',
+    title: '忽略字段',
+    type: 'fields',
+    globalKey: 'ignore_cols',
+    perSheetKey: 'sheet_ignore_cols',
+    hint: '单参数为全局字段，双参数为指定表单字段',
+  },
+  {
+    key: 'anchor_settings',
+    title: '锚点',
+    type: 'anchors',
+    globalKey: 'default_keys',
+    perSheetKey: 'sheet_key_map',
+    hint: '单参数为默认锚点，双参数为指定表单锚点',
+  },
   { key: 'sheet_order', title: '表单顺序', type: 'order', hint: '拖拽调整输出顺序' },
 ]
 
@@ -34,16 +55,10 @@ const selectedSheets = computed(() => {
 
 function cardValue(card) {
   if (card.type === 'sheets') return selectedSheets.value
-  if (card.type === 'fields') {
+  if (card.globalKey) {
     return {
-      global: props.config.ignore_cols || [],
-      perSheet: props.config.sheet_ignore_cols || {},
-    }
-  }
-  if (card.type === 'anchors') {
-    return {
-      global: props.config.default_keys || [],
-      perSheet: props.config.sheet_key_map || {},
+      global: props.config[card.globalKey] || [],
+      perSheet: props.config[card.perSheetKey] || {},
     }
   }
   return props.config[card.key]
@@ -67,12 +82,9 @@ function saveEditedValue(value) {
   if (card.type === 'sheets') {
     patch('include_sheets', value.include)
     patch('exclude_sheets', value.exclude)
-  } else if (card.type === 'fields') {
-    patch('ignore_cols', value.global)
-    patch('sheet_ignore_cols', value.perSheet)
-  } else if (card.type === 'anchors') {
-    patch('default_keys', value.global)
-    patch('sheet_key_map', value.perSheet)
+  } else if (card.globalKey) {
+    patch(card.globalKey, value.global)
+    patch(card.perSheetKey, value.perSheet)
   } else {
     patch(card.key, value)
   }

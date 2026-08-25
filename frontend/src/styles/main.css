@@ -301,6 +301,17 @@ body {
   width: 100px;
 }
 
+/* 参数卡片之间的浅色分隔线（依赖 ParameterCard 根元素为直接兄弟：
+   CompareForm .panel-body / HistoryRunDetail .run-detail-section） */
+.parameter-card + .parameter-card {
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 55%, transparent);
+  padding-top: var(--space-sm);
+}
+
+.parameter-card:last-child {
+  margin-bottom: 0;
+}
+
 .parameter-card-tags {
   flex: 1;
   display: flex;

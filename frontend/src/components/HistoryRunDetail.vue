@@ -38,8 +38,11 @@ const cards = computed(() => {
     {
       key: "common_cols",
       title: "排除字段",
-      type: "list",
-      value: p.common_cols || [],
+      type: "fields",
+      value: {
+        global: p.common_cols || [],
+        perSheet: p.sheet_common_cols || {},
+      },
     },
     {
       key: "sheet_scope",

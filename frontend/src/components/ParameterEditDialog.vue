@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Plus, Delete, Close, Check, Rank } from '@element-plus/icons-vue'
 import Draggable from 'vuedraggable'
 
@@ -12,20 +12,20 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
-const text = ref('')
 const checkedSheets = ref([])
 const orderItems = ref([])
 const rows = ref([])
 
-function textToValue() {
-  return text.value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-}
+// 比对表单多选下拉的候选：扫描结果 ∪ 当前已选。
+// 并集保证「换文件后未扫描到但已选中」的表单不会从列表消失（从而无法被取消）。
+const sheetOptions = computed(() => [
+  ...new Set([...props.sheetNames, ...checkedSheets.value]),
+])
 
-function valueToText(value) {
-  return Array.isArray(value) ? value.join('\n') : ''
+// dict 表格「表单」列的候选：扫描结果 ∪ 本行已填值（可能是手输的未来表单）
+function sheetOptionsFor(row) {
+  const current = String(row.sheet || '').trim()
+  return current ? [...new Set([...props.sheetNames, current])] : [...props.sheetNames]
 }
 
 function toRows(value) {
@@ -47,7 +47,7 @@ function rowsToValue() {
       .map((item) => item.trim())
       .filter(Boolean)
     if (!items.length) continue
-    const sheet = row.sheet.trim()
+    const sheet = String(row.sheet || '').trim()
     if (sheet) perSheet[sheet] = items
     else global.push(...items)
   }
@@ -57,12 +57,12 @@ function rowsToValue() {
 function openDialog() {
   const model = props.modelValue
   if (!model) return
-  if (model.type === 'list') {
-    text.value = valueToText(props.value)
-  } else if (model.type === 'sheets') {
+  if (model.type === 'sheets') {
     checkedSheets.value = props.sheetNames.length
       ? [...props.selectedSheets]
       : [...(Array.isArray(props.value) ? props.value : [])]
+  } else if (model.type === 'fields' || model.type === 'anchors') {
+    rows.value = toRows(props.value)
   } else if (model.type === 'order') {
     const available = props.selectedSheets.length
       ? props.selectedSheets
@@ -74,16 +74,7 @@ function openDialog() {
       ...existing.filter((name) => available.includes(name)),
       ...available.filter((name) => !existing.includes(name)),
     ].map((name) => ({ name }))
-  } else if (model.type === 'fields' || model.type === 'anchors') {
-    rows.value = toRows(props.value)
   }
-}
-
-function toggleSheet(name, checked) {
-  const next = new Set(checkedSheets.value)
-  if (checked) next.add(name)
-  else next.delete(name)
-  checkedSheets.value = [...next]
 }
 
 function addRow() {
@@ -98,9 +89,7 @@ function save() {
   const model = props.modelValue
   if (!model) return
   let value
-  if (model.type === 'list') {
-    value = textToValue()
-  } else if (model.type === 'sheets') {
+  if (model.type === 'sheets') {
     if (!props.sheetNames.length) {
       value = { include: [...checkedSheets.value], exclude: [...props.excludeSheets] }
     } else {
@@ -139,17 +128,26 @@ function save() {
   >
     <div v-if="modelValue" class="edit-body">
       <template v-if="modelValue.type === 'sheets'">
-        <div v-if="sheetNames.length" class="sheet-checkboxes">
-          <el-checkbox
-            v-for="name in sheetNames"
-            :key="name"
-            :model-value="checkedSheets.includes(name)"
-            @update:model-value="toggleSheet(name, $event)"
-          >
-            {{ name }}
-          </el-checkbox>
+        <div v-if="sheetNames.length" class="sheet-toolbar">
+          <el-button size="small" text @click="checkedSheets = [...sheetNames]">全选</el-button>
+          <el-button size="small" text @click="checkedSheets = []">清空</el-button>
         </div>
-        <div v-else class="edit-empty">请先上传旧版本或新版本文件，系统会自动扫描表单。</div>
+        <el-select
+          v-model="checkedSheets"
+          multiple
+          filterable
+          clearable
+          collapse-tags
+          collapse-tags-tooltip
+          :max-collapse-tags="6"
+          placeholder="搜索并选择要比对的表单"
+          class="sheet-select"
+        >
+          <el-option v-for="name in sheetOptions" :key="name" :label="name" :value="name" />
+        </el-select>
+        <div v-if="!sheetNames.length" class="edit-empty">
+          请先上传旧版本或新版本文件，系统会自动扫描表单。
+        </div>
         <div class="edit-hint">{{ modelValue.hint }}</div>
       </template>
 
@@ -179,7 +177,22 @@ function save() {
             <span></span>
           </div>
           <div v-for="(row, index) in rows" :key="index" class="dict-row">
-            <el-input v-model="row.sheet" size="small" placeholder="留空表示全局" />
+            <el-select
+              v-model="row.sheet"
+              size="small"
+              filterable
+              clearable
+              allow-create
+              default-first-option
+              placeholder="留空=全局；可输入后回车"
+            >
+              <el-option
+                v-for="name in sheetOptionsFor(row)"
+                :key="name"
+                :label="name"
+                :value="name"
+              />
+            </el-select>
             <el-input v-model="row.items" size="small" placeholder="字段1, 字段2" />
             <el-button
               size="small"
@@ -192,11 +205,6 @@ function save() {
             />
           </div>
         </div>
-        <div class="edit-hint">{{ modelValue.hint }}</div>
-      </template>
-
-      <template v-else>
-        <el-input v-model="text" type="textarea" :rows="10" placeholder="每行一个值" />
         <div class="edit-hint">{{ modelValue.hint }}</div>
       </template>
     </div>
@@ -223,6 +231,21 @@ function save() {
 
 .dict-toolbar {
   display: flex;
+}
+
+/* el-select 默认宽度 100%，但 grid item 的 min-width 默认为 auto，长表单名会撑爆 1fr 轨道 */
+.dict-row > .el-select,
+.dict-row > .el-input {
+  min-width: 0;
+}
+
+.sheet-select {
+  width: 100%;
+}
+
+.sheet-toolbar {
+  display: flex;
+  gap: var(--space-sm);
 }
 
 .dict-table {
