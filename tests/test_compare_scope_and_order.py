@@ -213,6 +213,37 @@ def test_sheet_common_cols_empty_list_disables_global(workbooks, tmp_path):
     assert "UPDATETIME" not in _headers(wb, "DM")
 
 
+@pytest.mark.integration
+def test_sheet_common_cols_anchor_warning_when_global_has_key(workbooks, tmp_path):
+    """显式空列表禁用全局排除时，全局列表里的锚点列仍会先被删掉 → 应打锚点失效告警。"""
+    old_path, new_path = workbooks
+    out_path = os.path.join(str(tmp_path), "out.xlsx")
+    warnings = []
+
+    def collect_log(message):
+        warnings.append(message)
+
+    params = dict(
+        {
+            "default_keys": ["SUBJID"],
+            "common_cols": ["SUBJID"],
+            "sheet_common_cols": {"AE": []},
+            "include_sheets": ["AE", "DM"],
+        },
+    )
+    cm = ConfigManager()
+    cm.update_from_parameters(params, {})
+    process_edc_multithreaded(
+        old_path,
+        new_path,
+        out_path,
+        collect_log,
+        config=cm,
+        stop_flag=threading.Event(),
+    )
+    assert any("锚点将失效" in message for message in warnings)
+
+
 def test_config_manager_defaults_sheet_common_cols():
     cm = ConfigManager()
     assert cm.sheet_common_cols == {}

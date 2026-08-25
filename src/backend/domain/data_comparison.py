@@ -370,9 +370,14 @@ def process_single_sheet_complete(
                     key_cols = config.default_keys
                     log_func(f"ℹ️ Sheet [{sheet_name}] 使用默认锚点列: {key_cols}")
 
-                # 排除字段在读取期已物理删列；若误删锚点列，锚点将整体失效
+                # 排除字段在读取期已物理删列；若误删锚点列，锚点将整体失效。
+                # 告警同时检查本表单实际生效的列表与被 per-sheet 整体替换掉的全局列表：
+                # 显式空列表禁用全局排除时，全局列表里的锚点列仍会先于替换被删掉。
                 dropped_keys = [
-                    col for col in effective_cols_to_drop if col in key_cols
+                    col
+                    for col in list(effective_cols_to_drop)
+                    + list(config.common_cols_to_drop or [])
+                    if col in key_cols
                 ]
                 if dropped_keys:
                     log_func(
