@@ -247,6 +247,7 @@ class CompareRequest(BaseModel):
     max_workers: Optional[int] = None
     merge_deleted_data: bool = True
     common_cols: List[str] = Field(default_factory=list)
+    sheet_common_cols: Dict[str, List[str]] = Field(default_factory=dict)
     exclude_sheets: List[str] = Field(default_factory=list)
     default_keys: List[str] = Field(default_factory=list)
     sheet_key_map: Dict[str, List[str]] = Field(default_factory=dict)
@@ -267,6 +268,7 @@ class CompareRequest(BaseModel):
             "header_row_content": self.header_row_content,
             "merge_deleted_data": self.merge_deleted_data,
             "common_cols": list(self.common_cols),
+            "sheet_common_cols": dict(self.sheet_common_cols),
             "exclude_sheets": list(self.exclude_sheets),
             "default_keys": list(self.default_keys),
             "sheet_key_map": dict(self.sheet_key_map),

@@ -36,6 +36,7 @@ describe("HistoryRunDetail 参数分组", () => {
       header_row_content: "SASFieldLabel",
       max_workers: 8,
       common_cols: ["A", "B"],
+      sheet_common_cols: { S1: ["G"] },
       ignore_cols: ["C"],
       sheet_ignore_cols: { S1: ["D"] },
       default_keys: ["E"],
@@ -50,6 +51,16 @@ describe("HistoryRunDetail 参数分组", () => {
     expect(text).toContain("比对参数");
     expect(text).toContain("排除字段");
     expect(text).toContain("颜色设置");
+    // 排除字段以 {global, perSheet} 形态渲染：全局 + 指定表单各一个标签
+    expect(text).toContain("全局：A, B");
+    expect(text).toContain("S1：G");
+  });
+
+  it("老历史快照无 sheet_common_cols 时只渲染全局排除字段标签", () => {
+    const wrapper = mountDetail({
+      common_cols: ["A", "B"],
+    });
+    expect(wrapper.text()).toContain("全局：A, B");
   });
 
   it("空参数不抛异常", () => {

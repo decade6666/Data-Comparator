@@ -24,6 +24,7 @@ export function emptyConfig() {
     max_workers: DEFAULT_WORKERS,
     merge_deleted_data: true,
     common_cols: [],
+    sheet_common_cols: {},
     exclude_sheets: [],
     default_keys: [],
     sheet_key_map: {},
@@ -61,9 +62,7 @@ export function applyDocument(doc, options = {}) {
       config[key] = key in doc ? cloneValue(doc[key]) : defaults[key]
       continue
     }
-    if (key in doc) {
-      config[key] = cloneValue(doc[key])
-    }
+    config[key] = key in doc ? cloneValue(doc[key]) : defaults[key]
   }
 }
 
@@ -79,6 +78,7 @@ export function buildParameters() {
     max_workers: config.max_workers || null,
     merge_deleted_data: config.merge_deleted_data,
     common_cols: config.common_cols,
+    sheet_common_cols: config.sheet_common_cols,
     exclude_sheets: config.exclude_sheets,
     default_keys: config.default_keys,
     sheet_key_map: config.sheet_key_map,

@@ -46,6 +46,24 @@ workbook but are excluded from diff generation.
 - Column add/delete detection is NOT affected by ignore configuration: added/deleted columns
   are still detected and marked even when they are ignored for diff judgment.
 
+### common_cols / sheet_common_cols
+
+Columns listed in `common_cols` (global) or `sheet_common_cols` (per-sheet) are physically
+dropped at READ time — earlier than anchor resolution and diff comparison — so they never appear
+in the output workbook and can never serve as anchor columns.
+
+- Drop happens exactly at `read_single_sheet_from_excel` via `cols_to_drop` (keyword arg),
+  called from `process_single_sheet_complete`; new/missing-sheet branches receive the
+  already-dropped DataFrames.
+- Per-sheet resolution uses replace semantics (like `sheet_ignore_cols`): `if sheet_name in
+  sheet_common_cols` (membership test, not truthiness — `{"AE": []}` means "drop nothing for
+  AE"); unmatched sheets fall back to the global `common_cols`.
+- Because dropping is physical and precedes anchor parsing, a dropped anchor column silently
+  disables the sheet's anchor; a `⚠️` warning log fires when the effective drop list intersects
+  the resolved key columns.
+- Do NOT add `sheet_common_cols` to `_EXPORT_STRIP_FIELDS` (config export) or
+  `_STRIP_PARAMETER_FIELDS` (history snapshot) — both must keep per-sheet parameters.
+
 ### Tests
 
 `tests/test_compare_scope_and_order.py` covers include_sheets / ignore_cols / sheet_order

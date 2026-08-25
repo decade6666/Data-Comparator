@@ -55,3 +55,29 @@ def test_compare_maps_unexpected_failure(monkeypatch, auth_client) -> None:
         json={"old_file_upload_id": "old", "new_file_upload_id": "new"},
     )
     assert response.status_code == 400
+
+
+def test_compare_request_carries_sheet_common_cols() -> None:
+    document = web_api.CompareRequest(
+        common_cols=["A"], sheet_common_cols={"AE": ["B"]}
+    ).to_parameter_document()
+    assert document["common_cols"] == ["A"]
+    assert document["sheet_common_cols"] == {"AE": ["B"]}
+
+
+def test_compare_request_defaults_sheet_common_cols() -> None:
+    document = web_api.CompareRequest().to_parameter_document()
+    assert document["sheet_common_cols"] == {}
+
+
+def test_compare_rejects_misspelled_sheet_common_cols(auth_client) -> None:
+    # extra: forbid 拦下拼错的键名；同时锁定字段名的确切拼写
+    response = auth_client.post(
+        "/api/compare",
+        json={
+            "old_file_upload_id": "old",
+            "new_file_upload_id": "new",
+            "sheet_commoncols": {},
+        },
+    )
+    assert response.status_code == 422

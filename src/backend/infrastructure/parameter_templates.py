@@ -32,6 +32,7 @@ BUILTIN_TEMPLATES: Dict[str, ParameterDocument] = {
             "MR_STA",
             "TOPIC",
         ],
+        "sheet_common_cols": {},
         "exclude_sheets": [
             "系统变量",
             "数据范围",
@@ -59,6 +60,7 @@ BUILTIN_TEMPLATES: Dict[str, ParameterDocument] = {
         "header_row_num": 1,
         "merge_deleted_data": True,
         "common_cols": ["PSTUDYNM", "PSTUDYID", "GROUPID", "ISDEL", "CRFVER"],
+        "sheet_common_cols": {},
         "exclude_sheets": ["Code_List", "DOMAIN_NAME"],
         "default_keys": [
             "SUBJID",

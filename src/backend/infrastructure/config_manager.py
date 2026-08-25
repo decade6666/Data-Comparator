@@ -14,6 +14,7 @@ class ConfigManager:
         self.header_row_content = "SASFieldLabel"
         self.exclude_sheets: List[str] = []
         self.common_cols_to_drop: List[str] = []
+        self.sheet_common_cols: Dict[str, List[str]] = {}
         self.default_keys: List[str] = []
         self.sheet_key_map: Dict[str, List[str]] = {}
         self.include_sheets: List[str] = []
@@ -44,6 +45,7 @@ class ConfigManager:
         self.header_row_content = parameters.get("header_row_content", "SASFieldLabel")
         self.exclude_sheets = list(parameters.get("exclude_sheets", []))
         self.common_cols_to_drop = list(parameters.get("common_cols", []))
+        self.sheet_common_cols = dict(parameters.get("sheet_common_cols", {}))
         self.default_keys = list(parameters.get("default_keys", []))
         self.sheet_key_map = dict(parameters.get("sheet_key_map", {}))
         self.include_sheets = list(parameters.get("include_sheets", []))
