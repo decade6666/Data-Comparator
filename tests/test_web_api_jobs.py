@@ -174,3 +174,102 @@ def test_completed_job_persists_history_and_log(tmp_path, monkeypatch, auth_clie
         assert log_response.headers["content-type"].startswith("text/plain")
     finally:
         database._engine = None
+
+
+def test_active_job_endpoint_none(monkeypatch, auth_client):
+    """无活跃任务时返回 active=false；/api/jobs/active 不得被
+    {job_id} 路由吞掉（路由顺序回归，命中则 404/422）。"""
+    response = auth_client.get("/api/jobs/active")
+    assert response.status_code == 200
+    assert response.json() == {
+        "active": False,
+        "stale": False,
+        "job_id": None,
+        "config_name": None,
+        "status": None,
+        "progress_percent": None,
+        "progress_message": None,
+        "log_lines": [],
+        "log_cursor": 0,
+        "output_path": None,
+        "error": None,
+    }
+
+
+def test_active_job_endpoint_returns_running_job(monkeypatch, auth_client):
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        started.set()
+        release.wait(10)
+        log_func("处理中")
+        progress_func("处理中", 62)
+        return "/tmp/out/report.xlsx"
+
+    monkeypatch.setattr(
+        "src.backend.application.job_manager.run_comparison", fake_run_comparison
+    )
+    response = _submit(auth_client)
+    assert response.status_code == 201
+    job_id = response.json()["job_id"]
+    assert started.wait(10)
+
+    body = auth_client.get("/api/jobs/active").json()
+    assert body["active"] is True
+    assert body["stale"] is False
+    assert body["job_id"] == job_id
+    assert body["config_name"] == "web"
+    assert body["status"] in ("pending", "running")
+    assert body["log_cursor"] == 0
+
+    # since 增量：任务结束后 cursor 生效
+    release.set()
+    _poll(auth_client, job_id)
+    body = auth_client.get("/api/jobs/active?since=0")
+    assert body.status_code == 200
+    assert body.json()["active"] is False
+
+
+def test_active_job_cancel_endpoint(monkeypatch, auth_client):
+    started = threading.Event()
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        started.set()
+        stop_flag.wait(10)
+        raise InterruptedError("用户停止了操作")
+
+    monkeypatch.setattr(
+        "src.backend.application.job_manager.run_comparison", fake_run_comparison
+    )
+    # 无任务时 404
+    assert auth_client.post("/api/jobs/active/cancel").status_code == 404
+
+    response = _submit(auth_client)
+    job_id = response.json()["job_id"]
+    assert started.wait(10)
+
+    cancelled = auth_client.post("/api/jobs/active/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json() == {"job_id": job_id, "status": "cancelling"}
+
+    body = _poll(auth_client, job_id)
+    assert body["status"] == "cancelled"
+    # 槽位已释放：可立即提交新任务
+    assert _submit(auth_client).status_code == 201

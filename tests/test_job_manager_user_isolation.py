@@ -162,3 +162,51 @@ def test_global_semaphore_queues_third_job(monkeypatch) -> None:
     assert _wait_for_terminal(job_b) == JobStatus.COMPLETED
     assert _wait_for_terminal(job_c) == JobStatus.COMPLETED
     manager.stop()
+
+
+def test_active_job_snapshot_requires_owner(monkeypatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    monkeypatch.setattr(
+        job_manager_module, "run_comparison", _blocking_fake(release, started)
+    )
+    manager = JobManager()
+
+    job_a = manager.submit(MINIMAL_PARAMS, config_name="A", user_id=1)
+    assert started.wait(10)
+
+    # 用户 B 查不到用户 A 的活跃任务
+    assert manager.active_job_snapshot(user_id=2) is None
+    snapshot = manager.active_job_snapshot(user_id=1)
+    assert snapshot is not None
+    assert snapshot["job_id"] == job_a.job_id
+    assert snapshot["config_name"] == "A"
+
+    release.set()
+    _wait_for_terminal(job_a)
+    manager.stop()
+
+
+def test_cancel_active_job_scoped_to_user(monkeypatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    monkeypatch.setattr(
+        job_manager_module,
+        "run_comparison",
+        _blocking_fake(release, started, interrupted=True),
+    )
+    manager = JobManager()
+
+    job_a = manager.submit(MINIMAL_PARAMS, user_id=1)
+    job_b = manager.submit(MINIMAL_PARAMS, user_id=2)
+    assert started.wait(10)
+
+    # 用户 B 的 active/cancel 不影响 A
+    assert manager.cancel_active_job(user_id=2) == job_b.job_id
+    assert job_a.stop_flag.is_set() is False
+    assert job_b.stop_flag.is_set() is True
+
+    release.set()
+    _wait_for_terminal(job_a)
+    assert _wait_for_terminal(job_b) == JobStatus.CANCELLED
+    manager.stop()

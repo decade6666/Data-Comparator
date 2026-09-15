@@ -32,6 +32,8 @@ FastAPI 接口：
   - 请求体由 `JobSubmitRequest` 建模（复用 `CompareRequest` 字段，路径字段可省略）。
   - 成功返回 `JobSubmitResponse`（`job_id` / `status`）。
   - 同一时间只允许一个任务运行（`JobManager` 单任务串行，冲突返回 409）。
+- `GET /api/jobs/active`：查询当前用户活跃任务（无任务 `active:false`，槽位悬空 `stale:true`）。供前端页面重开后接管恢复；**必须声明在 `/api/jobs/{job_id}` 之前**（FastAPI 按声明顺序匹配）。
+- `POST /api/jobs/active/cancel`：取消当前用户活跃任务（不需要 job_id）；槽位悬空时直接释放，无任务 404。
 - `GET /api/jobs/{job_id}`：轮询任务状态（`?since=N` 只返回新增日志）。
 - `POST /api/jobs/{job_id}/cancel`：停止任务。
 - `GET /api/jobs/{job_id}/download`：下载比对报告。
@@ -113,6 +115,7 @@ Web 接口放在 `web_api.py`，但业务编排应放在 `backend/application`�
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-15 | feat | 新增 `GET /api/jobs/active` 与 `POST /api/jobs/active/cancel`：关闭浏览器后重开页面可接管仍在运行的比对任务（自动切到任务所属项目、恢复进度/停止/下载）；提交撞 409 时也先尝试接管（「先接管后询问」），接管不了才弹取消确认框；槽位悬空的僵尸占位自动清除，消除「永久 409 只能重启服务」。兑现 09-15 事故 PRD 的 P1 遗留项。 |
 | 2026-08-24 | fix | 删除/改名闸门互斥：改名在途时删除 409、同用户并发改名拒绝；自动下载改任务级触发（useJob 终态回调 + 冻结快照 + jobId 去重），切走项目仍下原任务。 |
 | 2026-08-20 | feat | 新增配置改名端点 `POST /api/configs/{name}/rename`（内置模板保护、目标重名 409）。 |
 | 2026-08-18 | feat | 新增任务/上传/浏览/Sheet 发现/配置 CRUD 端点与静态资源托管，支持浏览器 Web UI。 |

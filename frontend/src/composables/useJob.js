@@ -125,6 +125,31 @@ async function cancel() {
   current.value.status = 'cancelling'
 }
 
+// 接管后端仍在运行的任务：把 /jobs/active 快照灌进指定项目桶并恢复轮询。
+// body 需以 since=0 拉全量日志（adoptActiveJob 负责，依赖后端 since 默认值 0），
+// 保证内存日志完整、
+// 服务端日志下载兜底不可用时仍可导出。
+function adoptJob(name, body) {
+  const entry = entryOf(name)
+  entry.jobId = body.job_id
+  entry.status = body.status
+  entry.progress = body.progress_percent ?? 0
+  entry.progressMessage = body.progress_message || '比对进行中'
+  entry.logLines = body.log_lines ? [...body.log_lines] : []
+  entry.logCursor = body.log_cursor ?? entry.logLines.length
+  entry.outputPath = body.output_path || null
+  entry.outputName = body.output_path
+    ? body.output_path.split('/').pop() || '比对报告.xlsx'
+    : ''
+  entry.error = body.error || null
+  _ensurePolling()
+}
+
+// 409 兜底：不依赖本地 jobId 取消占位任务（含槽位悬空的僵尸场景）。
+async function cancelActive() {
+  await api.post('/jobs/active/cancel')
+}
+
 function reset() {
   const entry = current.value
   entry.jobId = null
@@ -212,7 +237,7 @@ async function downloadLogsFor(entry) {
   }
 }
 
-export { activateJob, dropJob, renameJob, resetAllJobs }
+export { activateJob, adoptJob, cancelActive, dropJob, renameJob, resetAllJobs }
 
 export function useJob() {
   return {
@@ -226,6 +251,8 @@ export function useJob() {
     error,
     submit,
     cancel,
+    cancelActive,
+    adoptJob,
     download,
     downloadLogs,
     entryFor,
