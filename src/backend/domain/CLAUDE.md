@@ -78,7 +78,19 @@
 
 ### 锚点列 `_ANCHOR` 从哪里来？
 
-`create_anchor_by_sas_names` 根据配置中的关键 SAS 字段，在 DataFrame 中拼接匹配列生成 `_ANCHOR`。如果缺少 SASFieldName 信息，会记录告警并置空锚点。
+`create_anchor_by_sas_names` 根据配置中的关键 SAS 字段，在 DataFrame 中拼接匹配列生成 `_ANCHOR`。
+
+若无法构造有效锚点（缺少 SASFieldName 信息、一个关键字段都匹配不上、匹配到的字段不在实际列中、拼接过程出错），会抛出 `AnchorUnavailableError` **快速失败**，由 `process_single_sheet_complete` 标记该表单 `success=False` 并跳过，其余表单照常比对。
+
+**不要退回到「置空锚点后继续」的写法**：全表同值的 `_ANCHOR` 会让 `perform_full_comparison` 的 `pd.merge(on="_ANCHOR", how="outer")` 退化为笛卡尔积（N_new × N_old）。2026-09-15 线上事故即由此引发——1MB 以内的输入文件跑出 12.9 GB 内存、3 小时 CPU 时间且无法结束。
+
+注意 `AnchorUnavailableError` 必须在 `perform_full_comparison` 里显式重抛（排在宽 `except Exception` 之前），否则会被吞掉并返回空元组，导致调用方把表单误判为「处理成功但无数据」。
+
+锚点**重复**是合法场景，只告警不失败。`_guard_anchor_cardinality` 作为纵深防御，仅在新旧两侧锚点都塌缩为单一取值且行数乘积超阈值时拦截。
+
+### 高亮写回有哪些性能与中断约束？
+
+`apply_highlight_to_worksheet` 的差异字典 `diff_keys` 必须在行循环**外**只构建一次；放进循环会让复杂度退化为 O(行数 × 差异数)。该函数接受 `stop_flag`，并用 `check_stop`（带计数器节流）在行循环内定期检查，使大表单的高亮阶段也能响应「停止比对」。
 
 ### 新增/删除 Sheet 如何表现？
 
@@ -108,4 +120,5 @@
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-15 | fix | 锚点不可用改为抛 `AnchorUnavailableError` 快速失败（此前置空 `_ANCHOR` 继续，导致 `pd.merge` 退化为笛卡尔积）；`perform_full_comparison` 显式重抛该异常并在 merge 前加 `_guard_anchor_cardinality` 防爆闸；`apply_highlight_to_worksheet` 的 `diff_keys` 提出行循环（O(N×M) → O(N+M)）并新增 `stop_flag` 支持。 |
 | 2026-05-24T03:25:49 | docs | 初始化 `backend/domain` 模块 Claude 指南。 |

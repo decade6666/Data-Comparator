@@ -2,6 +2,7 @@ import concurrent.futures
 import gc
 import os
 from numbers import Number
+from typing import Optional
 
 import pandas as pd
 from openpyxl import Workbook
@@ -9,6 +10,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
 
+from ...shared.contracts import LogFunc
 from ...shared.log_utils import log
 from ..infrastructure.file_runtime import (
     check_and_remove_file_protection,
@@ -27,6 +29,15 @@ from .processing_control import (
     update_progress,
 )
 from .sheet_process_result import SheetProcessResult
+
+
+class AnchorUnavailableError(Exception):
+    """锚点无法构造。
+
+    继续比对会让 ``_ANCHOR`` 退化为全表同值，下游 ``pd.merge(how="outer")``
+    随即变成笛卡尔积（N_new × N_old），既产出垃圾数据又会耗尽内存。
+    因此这里必须快速失败，由调用方把该表单标记为处理失败并跳过。
+    """
 
 
 def _maybe_gc_collect(threshold_percent=70, log_func=None):
@@ -652,6 +663,11 @@ def perform_full_comparison(
             old_name_with_suffix = f"{old_name}_OLD_"
             merged_name_to_label[old_name_with_suffix] = old_label
 
+        # 纵深防御：即使锚点构造成功，也要确保不会退化为笛卡尔积再进 merge
+        _guard_anchor_cardinality(
+            new_df, old_df, sheet_name, progress_manager.safe_log
+        )
+
         # 合并数据：使用锚点列进行外连接，保留所有行
         merged_df = pd.merge(
             new_df,
@@ -889,6 +905,10 @@ def perform_full_comparison(
 
     except InterruptedError:
         raise
+    except AnchorUnavailableError:
+        # 必须排在下面的宽 except 之前：否则锚点错误会被吞掉并返回空元组，
+        # 调用方会把该表单误判为"处理成功但无数据"，问题更难排查。
+        raise
     except Exception as e:
         # 针对常见的Pandas模糊布尔异常，给出更明确的中文提示
         msg = str(e)
@@ -905,6 +925,41 @@ def perform_full_comparison(
         return pd.DataFrame(), {}, [], [], [], [], {}, None, 0, 0, 0
 
 
+def _guard_anchor_cardinality(
+    new_df: Optional[pd.DataFrame],
+    old_df: Optional[pd.DataFrame],
+    sheet_name: str,
+    log_func: Optional[LogFunc] = None,
+    max_product: int = 1_000_000,
+) -> None:
+    """拦截会退化为笛卡尔积的锚点组合。
+
+    仅当新旧两侧的锚点**都**塌缩为单一取值、且两侧行数乘积超过阈值时才拦截：
+    此时外连接的结果规模是 N×M。只有一侧重复、或存在多个重复锚点值的情况
+    （合法场景，见 ``create_anchor_by_sas_names`` 的"锚点重复"告警）一律放行。
+    """
+    if new_df is None or old_df is None:
+        return
+    if "_ANCHOR" not in new_df.columns or "_ANCHOR" not in old_df.columns:
+        return
+
+    new_rows = len(new_df)
+    old_rows = len(old_df)
+    if new_rows * old_rows <= max_product:
+        return
+
+    if new_df["_ANCHOR"].nunique(dropna=False) != 1:
+        return
+    if old_df["_ANCHOR"].nunique(dropna=False) != 1:
+        return
+
+    raise AnchorUnavailableError(
+        f"表单[{sheet_name}]新旧两侧锚点均为单一取值，"
+        f"外连接会退化为笛卡尔积（{new_rows} × {old_rows} 行），已中止该表单比对。"
+        "请检查锚点关键字段配置是否与该表单的实际字段匹配。"
+    )
+
+
 def create_anchor_by_sas_names(df, key_sas_names, log_func, sheet_name=""):
     """
     基于指定的SASFieldName列表创建DataFrame的锚点列（_ANCHOR）。
@@ -916,35 +971,36 @@ def create_anchor_by_sas_names(df, key_sas_names, log_func, sheet_name=""):
         sheet_name (str, optional): 当前处理的表单名称，用于日志输出。默认为空字符串。
     Returns:
         pd.DataFrame: 添加了锚点列（_ANCHOR）的DataFrame。
-                      如果无法创建有效锚点，_ANCHOR列可能为空或包含重复值。
+    Raises:
+        AnchorUnavailableError: 无法构造有效锚点时抛出。此前这些分支会把 `_ANCHOR`
+            置为空字符串并继续，导致下游 merge 退化为笛卡尔积。
     """
     # 获取DataFrame的SASFieldName信息，优先从attrs中获取，否则使用DataFrame的实际列名
     sas_names = getattr(df, "attrs", {}).get("sas_file_name", [])
     if not sas_names:
-        # 如果没有SASFieldName信息，无法创建有效锚点，锚点列置空
-        log(f"    ⚠️ 表单[{sheet_name}]没有SASFieldName信息，锚点列置空", log_func)
-        df["_ANCHOR"] = ""
-        return df
+        # 没有SASFieldName信息就无法定位锚点列，继续下去只会产生笛卡尔积
+        raise AnchorUnavailableError(
+            f"表单[{sheet_name}]没有SASFieldName信息，无法构造锚点，已跳过该表单。"
+        )
 
     # 查找所有在当前DataFrame中存在的锚点列
     sas_names_set = set(sas_names)
     matched_keys = [key for key in key_sas_names if key in sas_names_set]
 
     if not matched_keys:
-        # 如果没有找到任何匹配的锚点列，锚点列置空
-        log(f"    ⚠️ 表单[{sheet_name}]未找到任何匹配的锚点，锚点列置空", log_func)
-        df["_ANCHOR"] = ""
-        return df
+        raise AnchorUnavailableError(
+            f"表单[{sheet_name}]未找到任何匹配的锚点列，已跳过该表单。"
+            f"期望的锚点字段: {', '.join(key_sas_names) or '(未配置)'}；"
+            f"该表单实际有 {len(sas_names)} 个字段但都不在其中。"
+            "请检查锚点关键字段配置或该表单的字段命名。"
+        )
 
-    # 如果锚点列与实际DataFrame列不一致，直接置空，避免后续KeyError
+    # 如果锚点列与实际DataFrame列不一致，同样不能继续，避免后续KeyError或笛卡尔积
     missing_keys = [key for key in matched_keys if key not in df.columns]
     if missing_keys:
-        log(
-            f"    ⚠️ 表单[{sheet_name}]锚点列缺失: {', '.join(missing_keys)}，锚点列置空",
-            log_func,
+        raise AnchorUnavailableError(
+            f"表单[{sheet_name}]锚点列缺失: {', '.join(missing_keys)}，已跳过该表单。"
         )
-        df["_ANCHOR"] = ""
-        return df
 
     try:
         # 添加锚点列(_ANCHOR)，将所有关键列的值用"###"连接起来作为唯一标识
@@ -952,6 +1008,7 @@ def create_anchor_by_sas_names(df, key_sas_names, log_func, sheet_name=""):
         df["_ANCHOR"] = df[matched_keys].astype(str).agg("###".join, axis=1)
 
         # 检查锚点列是否有重复值，如果存在则记录警告
+        # 注意：锚点重复是合法场景，只告警不失败
         if not df["_ANCHOR"].is_unique:
             log(
                 f"    ⚠️ 锚点重复，重复数量: {df['_ANCHOR'].duplicated().sum()}",
@@ -959,10 +1016,9 @@ def create_anchor_by_sas_names(df, key_sas_names, log_func, sheet_name=""):
             )
 
     except Exception as e:
-        log(f"    ⚠️ 创建锚点时出错: {str(e)}", log_func)
-        # 确保_ANCHOR列存在，即使出错也将其初始化为空字符串
-        if "_ANCHOR" not in df.columns:
-            df["_ANCHOR"] = ""
+        raise AnchorUnavailableError(
+            f"表单[{sheet_name}]创建锚点时出错: {str(e)}，已跳过该表单。"
+        ) from e
 
     return df
 
@@ -1479,6 +1535,7 @@ def process_edc_multithreaded(
                         del_sas_names=result.del_sas_names,
                         sas_file_names=result.sas_file_names,
                         log_func=log_func,
+                        stop_flag=stop_flag,
                     )
 
                     # 更新SAS表头信息和Sheet标签颜色（这些信息从SheetProcessResult传递）

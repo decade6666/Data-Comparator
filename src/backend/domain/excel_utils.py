@@ -2,6 +2,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
 from ...shared.log_utils import log
+from .processing_control import check_stop
 
 
 def replace_worksheet_headers(worksheet: Worksheet, new_headers: list) -> Worksheet:
@@ -66,6 +67,7 @@ def apply_highlight_to_worksheet(
     del_sas_names=[],
     sas_file_names=[],
     log_func=None,
+    stop_flag=None,
 ):
     """根据比对结果为工作表（包括表头、单元格和Sheet标签）应用高亮和颜色标记。
     "更新"的行只高亮有变化的单元格，"新增"或"删除"的行则高亮整行，并相应标记列的增删。
@@ -80,6 +82,8 @@ def apply_highlight_to_worksheet(
         del_sas_names (list, optional): 删除的SAS列名列表。
         sas_file_names (list, optional): 最终结果DataFrame的SAS列名列表（即表头行显示的列名）。
         log_func (callable, optional): 日志函数，用于记录操作信息。
+        stop_flag (threading.Event, optional): 用户停止标志。置位时抛出 ``InterruptedError``，
+                                    使大表单的高亮阶段也能响应"停止比对"。
     """
 
     # 1. 表头染色 (Header highlighting)
@@ -130,8 +134,19 @@ def apply_highlight_to_worksheet(
     ):  # 如果没有找到"更新情况（标记）"列，则无法进行后续高亮，直接返回
         return
 
+    # 预先规范化差异字典的键（兼容np.int64和int类型）。
+    # 这一步与行无关，必须在循环外只做一次：放在循环内会让复杂度退化为
+    # O(行数 × 差异数)，在锚点失效导致行数膨胀时会直接拖垮整个任务。
+    diff_keys = {int(k): v for k, v in diff_info.items()} if diff_info else {}
+
+    # 停止检查计数器，配合 check_stop 的节流（每 100 次实际检查一次）
+    stop_counter = [0]
+
     # 从第二行开始迭代所有数据行（因为第一行是表头）
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), start=2):
+        # 大表单的高亮可能持续数分钟，这里定期检查用户是否已请求停止
+        check_stop(log_func, stop_flag, stop_counter)
+
         # 获取"更新情况（标记）"列中的单元格及其值
         mark_cell = row[mark_col_idx - 1]  # openpyxl的row对象是0-based索引，所以需要-1
         mark_value = str(mark_cell.value).strip() if mark_cell.value is not None else ""
@@ -150,26 +165,20 @@ def apply_highlight_to_worksheet(
             data_row_idx = int(
                 row_idx - 2
             )  # df_row_idx是DataFrame的0-based索引，而Excel的row_idx是1-based
-            if diff_info:
-                # 兼容np.int64和int类型的key
-                # diff_keys = {int(k): v for k, v in diff_info.items()} # 引入numpy依赖，暂时注释
-                diff_keys = {
-                    int(k): v for k, v in diff_info.items()
-                }  # 替换为没有numpy依赖的版本
-                if data_row_idx in diff_keys:
-                    changed_cols = diff_keys[data_row_idx]
-                    for col_name in changed_cols:
-                        if col_name in col_name_to_idx:
-                            col_excel_idx = col_name_to_idx[
-                                col_name
-                            ]  # 获取列的Excel索引（1-based）
-                            try:
-                                cell = row[col_excel_idx - 1]  # 获取对应的单元格
-                                cell.fill = config.highlight_fill  # 应用高亮填充
-                            except Exception as e:
-                                if log_func:
-                                    log_func(
-                                        f"高亮单元格失败: row={row_idx}, "
-                                        f"col={col_name}, err={e}"
-                                    )
-                                pass  # 忽略单元格访问错误，继续处理
+            if diff_keys and data_row_idx in diff_keys:
+                changed_cols = diff_keys[data_row_idx]
+                for col_name in changed_cols:
+                    if col_name in col_name_to_idx:
+                        col_excel_idx = col_name_to_idx[
+                            col_name
+                        ]  # 获取列的Excel索引（1-based）
+                        try:
+                            cell = row[col_excel_idx - 1]  # 获取对应的单元格
+                            cell.fill = config.highlight_fill  # 应用高亮填充
+                        except Exception as e:
+                            if log_func:
+                                log_func(
+                                    f"高亮单元格失败: row={row_idx}, "
+                                    f"col={col_name}, err={e}"
+                                )
+                            pass  # 忽略单元格访问错误，继续处理
