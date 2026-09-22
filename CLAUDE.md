@@ -138,6 +138,7 @@ pytest --cov=src --cov-report=term-missing
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-21 | fix | 修复锚点/表头行宽于数据行导致整表读取失败（`N columns passed, passed data had M columns`）并被误判为「缺失表单」整表标删除：`read_single_sheet_from_excel` 补齐 pandas `OpenpyxlReader` 在 `reset_dimensions()` 之后的两步善后（逐行裁尾 + 全局补齐），并新增第三步把空列名规范化为 `Unnamed_{绝对下标}`（空/重名列名会让 `merged_df[col]`、`.loc` 单列访问硬崩溃并产生幻影增删列）；读取失败改抛 `SheetReadError` 而非返回 `None`（`None` 自此专指「表单不存在」），由既有失败路径转为 `success=False`，保存前打集中失败汇总，失败表单在报告中缺席而非被误标删除。与同期的 `AnchorUnavailableError` 同属「失败必须显式、不得被吞成有效状态」的治理。 |
 | 2026-09-15 | feat | 修复关闭浏览器后比对任务无法接管的问题（重开页面被 409 永久挡住）：新增 `GET /api/jobs/active` 与 `POST /api/jobs/active/cancel`，前端页面加载时自动接管仍在运行的任务（切到任务所属项目、恢复进度/停止/下载），槽位悬空的僵尸任务可不依赖 job_id 清除。兑现 09-15 锚点事故 PRD 记为 P1 的遗留项。 |
 | 2026-09-15 | fix | 修复锚点失效导致的笛卡尔积爆炸（线上事故：1MB 输入跑出 12.9GB 内存、3 小时 CPU 未结束）：`create_anchor_by_sas_names` 改抛 `AnchorUnavailableError` 快速失败并跳过该表单，`pd.merge` 前加防爆闸；高亮函数 `diff_keys` 提出行循环（O(N×M) → O(N+M)）并支持 `stop_flag`，使大表单高亮阶段可响应停止。实测同一输入 2h+ 未结束 → 238 秒、12.9GB → 111MB。 |
 | 2026-08-24 | feat | 排除字段支持按表单单独配置（新增 `sheet_common_cols`，整体替换语义，与 sheet_ignore_cols 一致）；排除字段编辑器与忽略字段/锚点统一为表格，「表单」列与「比对表单」改为可搜索下拉（候选来自扫描结果，支持手输/清空），参数卡片加浅色分隔线；修复 applyDocument 缺键不重置导致切换配置残留上一项目参数。 |

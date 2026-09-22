@@ -2,7 +2,7 @@ import concurrent.futures
 import gc
 import os
 from numbers import Number
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import pandas as pd
 from openpyxl import Workbook
@@ -1456,6 +1456,7 @@ def process_edc_multithreaded(
 
             # 遍历已完成的任务，收集结果并直接写入（支持停止）
             stop_requested = False
+            failed_sheets: List[Tuple[str, str]] = []  # (表单名, 失败原因)
             for future in concurrent.futures.as_completed(future_to_sheet):
                 # 如果用户请求停止，尽快跳出并取消未开始的任务
                 if stop_flag and stop_flag.is_set():
@@ -1469,6 +1470,9 @@ def process_edc_multithreaded(
                         log_func(
                             f"⚠️ 表单 [{sheet_name}] 处理失败: {result.error_message}"
                         )  # 记录失败信息
+                        failed_sheets.append(
+                            (sheet_name, result.error_message or "未知原因")
+                        )
                         continue  # 跳过当前失败的 Sheet
 
                     # 检查是否明确因为新旧数据都为空而跳过比对（仅有表头）
@@ -1612,6 +1616,12 @@ def process_edc_multithreaded(
         "所有表单处理完成，正在保存最终文件...", 85, progress_func=progress_func
     )  # 更新GUI进度
     log_func("所有表单处理完成，开始保存最终文件...")
+
+    # 失败表单集中汇总（保存前醒目提示；报告结构不变，失败表单直接缺席而非误标「删除」）
+    if failed_sheets:
+        log_func(f"⚠️ 共 {len(failed_sheets)} 个表单处理失败:")
+        for failed_name, failed_reason in failed_sheets:
+            log_func(f"   {failed_name}: {failed_reason}")
 
     # 如果没有成功处理的Sheet（即final_wb仍然是空的，只有默认创建后又删除的那个），则创建说明Sheet
     if not has_any_sheet_data and not final_wb.sheetnames:
