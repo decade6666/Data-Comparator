@@ -280,3 +280,26 @@ JWT 认证与按用户数据隔离；管理员用户管理视图（改名/硬删
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 修复锚点行宽于数据行导致整表读取失败并误判为缺失表单
+<!-- trellis-session: v=2 fp=da6a0097565c9992 -->
+
+**Date**: 2026-09-21
+**Task**: 修复锚点行宽于数据行导致整表读取失败并误判为缺失表单
+**Branch**: `main`
+
+### Summary
+
+定位并修复两层缺陷。L1：read_single_sheet_from_excel 在无条件 reset_dimensions() 后行宽逐行推断，锚点/表头行宽于数据行时 pd.DataFrame(columns=) 抛 ValueError。补齐 pandas OpenpyxlReader 的两步善后（逐行裁尾+全局补齐），新增第三步把空列名规范化为 Unnamed_{绝对下标}——空/重名列名在 data_comparison 有三个硬崩溃点且单个也会产生幻影增删列。L2：读失败从 return None 改为 raise SheetReadError，None 自此专指表单不存在；由既有 except Exception 转为 success=False，保存前打集中失败汇总，失败表单在报告中缺席而非被误标整表删除。关键认知：根因与畸形 dimension 声明无关（reset_dimensions 是无条件调用），任何锚点行带尾部样式空单元格的文件都会触发。真实文件 94 表单前后对照仅 1 处差异（原静默 None 的表现在显式报错）。与同期上游 AnchorUnavailableError 属同类治理。未验证项：触发本缺陷的原始文件端到端复跑。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a854f61` | fix(domain): 修复锚点行宽于数据行导致整表读取失败并误判为缺失表单 |
+| `9dec946` | Merge remote-tracking branch 'origin/main' into fix/wide-anchor-row-read |
+
+### Status
+
+[OK] **Completed**
