@@ -82,6 +82,7 @@ pytest 配置摘要：
 - `test_job_manager.py`：任务生命周期、取消、cleanup、guard 互斥（删除×改名、并发改名）、finalize 超时。
 - `test_anchor_guard.py`：锚点不可用快速失败（4 条路径）、锚点重复不误伤、`pd.merge` 绝不被调用（笛卡尔积回归保护）、防爆闸拦放规则、单表单失败不拖垮整个任务（端到端）。
 - `test_highlight_stop_and_perf.py`：高亮 `stop_flag` 中断、`diff_keys` 只构建一次（O(N×M) 回归保护）、不同键类型结果等价、不传 `stop_flag` 的向后兼容。
+- `test_merge_deleted_data_alignment.py`：`merge_deleted_data=False` 剔除删除行后的高亮行对齐——输出索引连续、`diff_dict` 键指向正确的行、端到端高亮落在真正变化的单元格上、`merge_deleted_data=True` 路径行为不变。
 - `test_user_delete_with_recycle.py`：用户硬删除（回收站、任务取消、改名在途 409、收尾超时 409）。
 
 ## 常见问题 (FAQ)
@@ -114,6 +115,7 @@ pytest 配置摘要：
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-21 | test | 新增 `test_merge_deleted_data_alignment.py`，覆盖关闭「合并删除数据」后的高亮行对齐回归保护。 |
 | 2026-09-15 | test | 新增 `test_anchor_guard.py` 与 `test_highlight_stop_and_perf.py`，覆盖锚点快速失败、笛卡尔积防护与高亮性能/中断。 |
 | 2026-08-20 | test | 新增 file_runtime 和字节级 OOXML 筛选器清理分支测试。 |
 | 2026-08-18 | feat | 新增任务管理、任务/上传/浏览/Sheet/配置 API、路径安全测试文件。 |

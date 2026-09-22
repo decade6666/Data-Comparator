@@ -138,6 +138,7 @@ pytest --cov=src --cov-report=term-missing
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-21 | fix | 修复关闭「合并删除数据」（`merge_deleted_data=False`）时报告高亮整体错位：`perform_full_comparison` 过滤掉「删除」行后，`raw_output_df` 的位置整体前移，而写 Excel 按位置顺序写、`apply_highlight_to_worksheet` 也按位置反查（`data_row_idx = row_idx - 2`），`diff_dict` 的键却仍是过滤前的行索引——从第一条删除记录所在行往后，每一行都取到别人的差异集，把未变单元格标成变化、漏掉真正变化的（新增/删除行的「整行差异集」被更新行读到时尤其明显）。修复为过滤后同步把 `diff_dict` 的键从「过滤前行索引」重映射到「过滤后位置」。真实数据复验：某 MH 表 908 个更新行中 302 行高亮错误 → 0，高亮单元格 2808 → 2247（与 `merge_deleted_data=True` 的正确结果完全一致）。`merge_deleted_data=True` 路径不过滤，行为不变。 |
 | 2026-09-21 | fix | 修复锚点/表头行宽于数据行导致整表读取失败（`N columns passed, passed data had M columns`）并被误判为「缺失表单」整表标删除：`read_single_sheet_from_excel` 补齐 pandas `OpenpyxlReader` 在 `reset_dimensions()` 之后的两步善后（逐行裁尾 + 全局补齐），并新增第三步把空列名规范化为 `Unnamed_{绝对下标}`（空/重名列名会让 `merged_df[col]`、`.loc` 单列访问硬崩溃并产生幻影增删列）；读取失败改抛 `SheetReadError` 而非返回 `None`（`None` 自此专指「表单不存在」），由既有失败路径转为 `success=False`，保存前打集中失败汇总，失败表单在报告中缺席而非被误标删除。与同期的 `AnchorUnavailableError` 同属「失败必须显式、不得被吞成有效状态」的治理。 |
 | 2026-09-15 | feat | 修复关闭浏览器后比对任务无法接管的问题（重开页面被 409 永久挡住）：新增 `GET /api/jobs/active` 与 `POST /api/jobs/active/cancel`，前端页面加载时自动接管仍在运行的任务（切到任务所属项目、恢复进度/停止/下载），槽位悬空的僵尸任务可不依赖 job_id 清除。兑现 09-15 锚点事故 PRD 记为 P1 的遗留项。 |
 | 2026-09-15 | fix | 修复锚点失效导致的笛卡尔积爆炸（线上事故：1MB 输入跑出 12.9GB 内存、3 小时 CPU 未结束）：`create_anchor_by_sas_names` 改抛 `AnchorUnavailableError` 快速失败并跳过该表单，`pd.merge` 前加防爆闸；高亮函数 `diff_keys` 提出行循环（O(N×M) → O(N+M)）并支持 `stop_flag`，使大表单高亮阶段可响应停止。实测同一输入 2h+ 未结束 → 238 秒、12.9GB → 111MB。 |

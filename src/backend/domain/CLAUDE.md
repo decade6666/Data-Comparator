@@ -92,6 +92,14 @@
 
 `apply_highlight_to_worksheet` 的差异字典 `diff_keys` 必须在行循环**外**只构建一次；放进循环会让复杂度退化为 O(行数 × 差异数)。该函数接受 `stop_flag`，并用 `check_stop`（带计数器节流）在行循环内定期检查，使大表单的高亮阶段也能响应「停止比对」。
 
+### `diff_dict` 的键为什么必须跟着行过滤一起重映射？
+
+高亮是**按位置**反查的：写 Excel 用 `dataframe_to_rows` 按位置顺序写，`apply_highlight_to_worksheet` 用 `data_row_idx = row_idx - 2` 反算位置。因此 `diff_dict` 的键必须始终等于**输出 DataFrame 中的位置**。
+
+`perform_full_comparison` 在 `merge_deleted_data=False` 时会剔除「删除」行，这会让后续行的位置整体前移。**任何删除或重排输出行的操作，都必须同步重映射 `diff_dict` 的键**，否则从第一条被剔除的记录往后，每一行都会取到别人的差异集——未变的单元格被标成变化，真正变化的被漏掉；新增/删除行的「整行差异集」被更新行读到时症状尤其明显（整行铺色）。
+
+只 `reset_index(drop=True)` 不够：那只改了 DataFrame 的索引，`diff_dict` 的键不会跟着变。回归测试见 `tests/test_merge_deleted_data_alignment.py`。
+
 ### 新增/删除 Sheet 如何表现？
 
 领域层分别通过 `process_new_sheet` 与 `process_missing_sheet` 处理，并在输出 workbook 中保留数据、标记 Sheet 状态和颜色。
@@ -120,5 +128,6 @@
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-21 | fix | `perform_full_comparison` 在 `merge_deleted_data=False` 剔除「删除」行后，同步把 `diff_dict` 的键从「过滤前行索引」重映射到「过滤后位置」。此前只有行被剔除、键没变，导致从第一条删除记录往后高亮整体错位（真实数据：908 个更新行中 302 行高亮错误）。 |
 | 2026-09-15 | fix | 锚点不可用改为抛 `AnchorUnavailableError` 快速失败（此前置空 `_ANCHOR` 继续，导致 `pd.merge` 退化为笛卡尔积）；`perform_full_comparison` 显式重抛该异常并在 merge 前加 `_guard_anchor_cardinality` 防爆闸；`apply_highlight_to_worksheet` 的 `diff_keys` 提出行循环（O(N×M) → O(N+M)）并新增 `stop_flag` 支持。 |
 | 2026-05-24T03:25:49 | docs | 初始化 `backend/domain` 模块 Claude 指南。 |

@@ -862,7 +862,21 @@ def perform_full_comparison(
             not getattr(config, "merge_deleted_data", True)
             and "更新情况（标记）" in raw_output_df.columns
         ):
-            raw_output_df = raw_output_df[raw_output_df["更新情况（标记）"] != "删除"]
+            # 剔除删除行会让后续行的位置整体前移，而下游写 Excel 按位置顺序写、
+            # apply_highlight_to_worksheet 也按位置反查 diff_dict
+            # （data_row_idx = row_idx - 2）。因此这里必须把 diff_dict 的键
+            # 从"过滤前的行索引"重映射到"过滤后的位置"，否则从第一条删除记录往后，
+            # 每一行都会取到别人的差异集，把没变的单元格标成变化、漏掉真正变化的。
+            kept_mask = raw_output_df["更新情况（标记）"] != "删除"
+            surviving_rows = list(raw_output_df.index[kept_mask])
+            raw_output_df = raw_output_df[kept_mask].reset_index(drop=True)
+
+            position_of_row = {row: pos for pos, row in enumerate(surviving_rows)}
+            diff_dict = {
+                position_of_row[row]: changed_cols
+                for row, changed_cols in diff_dict.items()
+                if row in position_of_row
+            }
 
         # 当不合并删除数据时，彻底删除旧有新无的列（deleted_cols）
         if not getattr(config, "merge_deleted_data", True) and deleted_cols:
