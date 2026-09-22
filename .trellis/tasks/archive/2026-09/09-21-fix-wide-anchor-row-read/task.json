@@ -3,7 +3,7 @@
   "name": "fix-wide-anchor-row-read",
   "title": "修复锚点行宽于数据行导致整表读取失败并误判为缺失表单",
   "description": "read_single_sheet_from_excel 在 reset_dimensions() 后行宽逐行推断，当锚点/表头行比数据行宽时 pd.DataFrame(columns=) 抛 ValueError，被 broad except 吞成 None，上层误判为缺失表单并把整表标记为删除，任务仍报成功。修复双向列宽对齐并区分读失败与表单不存在。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": null,
@@ -11,18 +11,20 @@
   "creator": "decade",
   "assignee": "decade",
   "createdAt": "2026-09-21",
-  "completedAt": null,
+  "completedAt": "2026-09-21",
   "branch": "fix/wide-anchor-row-read",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
-  "pr_url": null,
+  "commit": "a854f61",
+  "pr_url": "https://github.com/decade6666/Data-Comparator/pull/15",
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
   "meta": {
-    "worktree_path": ".claude/worktrees/fix+wide-anchor-row-read"
+    "worktree_path": ".claude/worktrees/fix+wide-anchor-row-read",
+    "merge_commit": "c25c6e9",
+    "merged_at": "2026-09-22"
   }
 }
