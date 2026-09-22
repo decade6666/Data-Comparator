@@ -136,7 +136,12 @@ def test_read_single_sheet_propagates_interrupted_error(monkeypatch) -> None:
 
 
 def test_read_single_sheet_passes_unset_flag(monkeypatch) -> None:
-    """未触发停止标志时，显式传入的 stop_flag 不应抛异常。"""
+    """未触发停止标志时，显式传入的 stop_flag 不应抛 InterruptedError。
+
+    假工作簿的 __getitem__ 挂在 SimpleNamespace 实例上（特殊方法按类型查找，
+    实际不可下标），读取必然失败：该失败应暴露为 SheetReadError 而不是
+    InterruptedError，证明未触发的停止标志没有引发停止异常。
+    """
     fake_pandas = types.SimpleNamespace(
         DataFrame=lambda *args, **kwargs: object(),
     )
@@ -160,14 +165,15 @@ def test_read_single_sheet_passes_unset_flag(monkeypatch) -> None:
         ),
     )
 
-    excel_header_utils.read_single_sheet_from_excel(
-        "file.xlsx",
-        "Sheet1",
-        1,
-        1,
-        lambda _message: None,
-        stop_flag=threading.Event(),
-    )
+    with pytest.raises(excel_header_utils.SheetReadError):
+        excel_header_utils.read_single_sheet_from_excel(
+            "file.xlsx",
+            "Sheet1",
+            1,
+            1,
+            lambda _message: None,
+            stop_flag=threading.Event(),
+        )
 
 
 def test_file_runtime_propagates_interrupted_error_without_fallback(

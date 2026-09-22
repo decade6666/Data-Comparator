@@ -138,6 +138,7 @@ pytest --cov=src --cov-report=term-missing
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-21 | fix | 修复锚点/表头行宽于数据行导致整表读取失败（`N columns passed, passed data had M columns`）并被误判为「缺失表单」整表标删除：`read_single_sheet_from_excel` 补齐 pandas `OpenpyxlReader` 在 `reset_dimensions()` 之后的两步善后（逐行裁尾 + 全局补齐），并新增第三步把空列名规范化为 `Unnamed_{绝对下标}`（空/重名列名会让 `merged_df[col]`、`.loc` 单列访问硬崩溃并产生幻影增删列）；读取失败改抛 `SheetReadError` 而非返回 `None`（`None` 自此专指「表单不存在」），由既有失败路径转为 `success=False`，保存前打集中失败汇总，失败表单在报告中缺席而非被误标删除。 |
 | 2026-08-24 | feat | 排除字段支持按表单单独配置（新增 `sheet_common_cols`，整体替换语义，与 sheet_ignore_cols 一致）；排除字段编辑器与忽略字段/锚点统一为表格，「表单」列与「比对表单」改为可搜索下拉（候选来自扫描结果，支持手输/清空），参数卡片加浅色分隔线；修复 applyDocument 缺键不重置导致切换配置残留上一项目参数。 |
 | 2026-08-23 | feat | 比对操作区重构：开始/停止/下载/保存收敛到底部吸底「操作」卡片，开始比对大按钮醒目、保存/取消保存改图标+悬停提示；完成后自动下载报告与日志（设置可关）；新增比对历史记录（服务端日志落盘成对文件、`comparison_run` 表持久化、`/api/history` 系列接口与历史弹窗）；修复排队任务取消后 `_user_active` 泄漏。 |
 | 2026-08-24 | fix | 修复比对历史并发与自动下载竞态：删除/改名闸门互斥（删除在改名在途时 409、同用户并发改名拒绝）；`cancel_all_for_user` 轮询 finalized_event 超时失败关闭（hook 卡住不再无限阻塞）；`record_job_finished` 检查用户存在性（已删用户跳过落库）；前端自动下载改为任务级触发（useJob 轮询终态回调 + 冻结快照 + jobId 去重），切走项目仍下原任务。 |

@@ -70,3 +70,52 @@ in the output workbook and can never serve as anchor columns.
 behavior end-to-end.
 
 ---
+
+## Ragged Rows After `reset_dimensions()` (invariant)
+
+`read_single_sheet_from_excel` calls `ws.reset_dimensions()` **unconditionally**
+(`src/backend/domain/excel_header_utils.py`). This is required: CRF-Editor exports hard-code
+`<dimension ref="A1"/>`, and openpyxl's read-only mode would otherwise truncate every sheet to 1x1.
+**Do not remove or make this call conditional** — doing so reintroduces the "所有表单均为空" defect.
+
+The consequence must be handled every time: after `reset_dimensions()`, `ReadOnlyWorksheet.iter_rows`
+computes `max_col = max_col or self.max_column`, and `max_column` is `None` with no automatic
+recalculation (`calculate_dimension()` raises unless `force=True`, and `iter_rows` never calls it).
+`_get_row` then falls back to `max_col = row[-1]['column']`, so **each row is sized by its own last
+populated-or-styled cell** and row widths are not uniform.
+
+pandas hits the same problem and solves it in `OpenpyxlReader.get_sheet_data` with two steps.
+This module mirrors them, plus a third step this codebase needs:
+
+1. **Trim trailing blanks per row**, independently for the label row, the anchor row, and every data
+   row. This removes styled-but-valueless tail cells, which are common in EDC exports and otherwise
+   inflate the anchor row's width beyond the data width.
+2. **Pad everything to one global width** = max(label width, anchor width, widest data row).
+   Column names pad with `Unnamed_{i}`; data rows pad with `None`.
+3. **Normalize blank column names to `Unnamed_{i}`** using the **absolute** index.
+
+Constraints when touching this code:
+
+- The blank predicate must treat `None` as blank. `_normalize_value` returns `None` for empty cells,
+  so pandas' `== ""` predicate alone is a no-op here.
+- Step order is fixed. Padding before trimming manufactures blank column names instead of removing
+  them, and two or more blank names collide.
+- Trimming must stay **after** the anchor duplicate-name check and **after** the empty-row
+  termination check, so neither changes behavior.
+- Pad data rows with `None`, not `""` — this matches `_normalize_value` and keeps NaN semantics.
+
+### Why column names must be unique and non-blank
+
+Blank (`""`) column names are not cosmetic. With two or more of them, `merged_df[col]` returns a
+DataFrame instead of a Series and the diff path raises; `.loc[row, col]` returns a Series and
+`pd.notna(...)` raises "truth value is ambiguous"; `.loc` assignment raises "cannot reindex on an
+axis with duplicate labels". Even a single blank name causes silent wrong output: it enters the
+`sas_file_name` set comparison and produces phantom added/deleted columns, forcing
+`change_type = data_changed` and mis-highlighting blank-named headers.
+
+Never "fix" a width mismatch by truncating column names to the data width. That silently drops
+declared-but-dataless SAS fields, creates phantom deleted columns when old/new truncate
+asymmetrically, and — if an anchor key falls in the truncated range — nullifies the anchor entirely,
+degrading the merge into a same-key cartesian product.
+
+---

@@ -63,6 +63,8 @@ pytest 配置摘要：
 测试文件索引：
 
 - `test_compare_scope_and_order.py`：include_sheets / ignore_cols / sheet_order 比对范围与输出顺序。
+- `test_excel_header_utils.py`：`reset_dimensions()` 之后的行宽善后——dimension 声明 A1 不被截断、参差行补齐、锚点/表头行宽于数据行（尾部有样式无值单元格）、真实声明但无数据的字段保留、空列名规范化为 `Unnamed_{绝对下标}`、label/name 长度对齐。
+- `test_sheet_read_failure.py`：读失败三态语义——表单不存在返回 `None`、读失败抛 `SheetReadError`、任一侧读失败都不得进入缺失/新增分支、保存前集中失败汇总、无失败时报告结构不变、真实触发器（锚点行重复列名）端到端闭环。
 - `test_web_api.py`：FastAPI 健康检查、比对成功路径、异常映射和 422 校验。
 - `test_comparison_runner.py`：应用编排、输出路径、依赖注入、异常传播。
 - `test_processing_service.py`：路径校验、输出名清洗、输出目录创建、不可变参数更新。

@@ -11,7 +11,8 @@ import zipfile
 
 import pandas as pd
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import PatternFill
 
 from src.backend.domain.excel_header_utils import read_single_sheet_from_excel
 
@@ -135,3 +136,101 @@ def test_ragged_rows_are_padded_after_dimension_reset(tmp_path) -> None:
     assert df.shape == (2, 3)
     # 短行缺失的 K3 以 None/NaN 填充，不抛错
     assert pd.isna(df.iloc[1]["K3"]) or df.iloc[1]["K3"] == ""
+
+
+def test_styled_empty_tail_in_anchor_row_does_not_break_read(tmp_path) -> None:
+    """锚点/表头行尾部只有样式没有值的单元格时，读取不应失败（dimension 声明正确也一样）。"""
+    path = tmp_path / "styled_tail.xlsx"
+    _make_workbook(
+        str(path),
+        "S1",
+        [
+            ["Label1", "Label2", "Label3"],
+            ["K1", "K2", "K3"],
+            ["a", "b", "c"],
+            ["d", "e", "f"],
+        ],
+    )
+    fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    wb = load_workbook(str(path))
+    ws = wb["S1"]
+    for row_idx in (1, 2):
+        for col_idx in (4, 5, 6):  # D/E/F 加底色但不填值
+            ws.cell(row=row_idx, column=col_idx).fill = fill
+    wb.save(str(path))
+    wb.close()
+
+    df = read_single_sheet_from_excel(
+        str(path), "S1", anchor_row_num=2, header_row_num=1, log_func=lambda m: None
+    )
+    assert df is not None
+    assert df.shape == (2, 3)
+    assert list(df.columns) == ["K1", "K2", "K3"]
+
+
+def test_declared_but_dataless_tail_fields_are_kept(tmp_path) -> None:
+    """锚点行尾部真实声明、但没有对应数据列的字段必须保留（已声明 schema 不丢失）。"""
+    path = tmp_path / "declared_tail.xlsx"
+    _make_workbook(
+        str(path),
+        "S1",
+        [
+            ["Label1", "Label2", "Label3", "Label4", "Label5"],
+            ["K1", "K2", "K3", "K4", "K5"],
+            ["a", "b", "c"],
+            ["d", "e", "f"],
+        ],
+    )
+    df = read_single_sheet_from_excel(
+        str(path), "S1", anchor_row_num=2, header_row_num=1, log_func=lambda m: None
+    )
+    assert df is not None
+    assert df.shape == (2, 5)
+    assert list(df.columns) == ["K1", "K2", "K3", "K4", "K5"]
+    # 无数据的声明字段对应列全为 NaN/None
+    assert df[["K4", "K5"]].isna().all().all()
+    assert df.attrs["sas_file_name"] == ["K1", "K2", "K3", "K4", "K5"]
+
+
+def test_no_empty_or_duplicate_column_names(tmp_path) -> None:
+    """锚点行中段空洞不得产生空字符串或重复列名（下游按列名单列访问会崩溃）。"""
+    path = tmp_path / "holes.xlsx"
+    _make_workbook(
+        str(path),
+        "S1",
+        [
+            ["Label1", "Label2", "Label3", "Label4", "Label5"],
+            ["K1", None, "K3", None, "K5"],
+            ["a", "b", "c", "d", "e"],
+        ],
+    )
+    df = read_single_sheet_from_excel(
+        str(path), "S1", anchor_row_num=2, header_row_num=1, log_func=lambda m: None
+    )
+    assert df is not None
+    columns = list(df.columns)
+    assert "" not in columns
+    assert len(set(columns)) == len(columns)
+    # 空洞位按绝对下标补名
+    assert columns[1] == "Unnamed_1"
+    assert columns[3] == "Unnamed_3"
+
+
+def test_label_and_name_lengths_stay_aligned(tmp_path) -> None:
+    """表头行、锚点行、数据行宽度互不一致时，attrs 中 label/name 长度必须与列数对齐。"""
+    path = tmp_path / "misaligned.xlsx"
+    _make_workbook(
+        str(path),
+        "S1",
+        [
+            ["Label1", "Label2", "Label3", "Label4", "Label5"],
+            ["K1", "K2", "K3", "K4"],
+            ["a", "b", "c"],
+        ],
+    )
+    df = read_single_sheet_from_excel(
+        str(path), "S1", anchor_row_num=2, header_row_num=1, log_func=lambda m: None
+    )
+    assert df is not None
+    assert len(df.attrs["sas_file_label"]) == len(df.attrs["sas_file_name"])
+    assert len(df.attrs["sas_file_name"]) == len(df.columns)

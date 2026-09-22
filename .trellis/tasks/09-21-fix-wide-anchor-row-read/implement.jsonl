@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/09-21-fix-wide-anchor-row-read/research/pandas-upstream-ragged-row-handling.md", "reason": "L1 裁尾+补齐两步法的上游依据，含两处不可照抄 pandas 的差异（None vs 空串、空行终止语义）"}
+{"file": ".trellis/tasks/09-21-fix-wide-anchor-row-read/research/dup-empty-columns-downstream-impact.md", "reason": "L1 第 3 步为何必须存在：空/重名列名的三个硬崩溃点与两类静默错误输出，含 12 组 pandas 实测"}
+{"file": ".trellis/tasks/09-21-fix-wide-anchor-row-read/research/read-failure-surfacing.md", "reason": "L2 方案依据：既有 success=False 失败路径与聚合层先例，以及被否决的替代方案"}
+{"file": ".trellis/spec/backend/excel-data-guidelines.md", "reason": "汇总表必须固定第一张、worksheets[1:] 假设、common_cols 在读取期物理删列——约束「读取失败表单」的插入位置"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "项目异常惯例：优先内置异常、InterruptedError 独立通道、边界校验分层"}

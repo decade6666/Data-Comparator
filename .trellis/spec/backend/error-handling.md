@@ -413,10 +413,49 @@ def _validate_config_name(name: str) -> None:
 
 ---
 
+## Sheet Read: Three-State Contract
+
+`read_single_sheet_from_excel` (`src/backend/domain/excel_header_utils.py`) has exactly three
+outcomes, and callers depend on telling them apart:
+
+| Outcome | Meaning | Caller behavior |
+|---|---|---|
+| `pd.DataFrame` | read succeeded | normal comparison |
+| `None` | **the sheet does not exist** in that workbook | new / missing sheet branch |
+| raises `SheetReadError` | the read failed | `success=False` + `error_message`, sheet skipped |
+| raises `InterruptedError` | user stopped | propagates to the caller unchanged |
+
+`None` means *absent*, never *failed*. Returning `None` on failure is the defect this contract
+exists to prevent: a failed read then took the "missing sheet" branch, `process_missing_sheet`
+marked **every row of the old sheet as 删除**, `result.success` stayed `True`, and the job finished
+green — the report confidently claimed a sheet had been deleted when it had merely failed to load.
+
+Rules:
+
+- The broad `except Exception` in the read function must `raise SheetReadError(...) from e`, after
+  closing the workbook. It must not log — `process_single_sheet_complete` logs once for all
+  failures, so logging here duplicates every failure line.
+- The `except InterruptedError: raise` branch stays **first**. Stop is not failure.
+- `SheetReadError` is deliberately caught by the existing broad `except Exception` in
+  `process_single_sheet_complete`, which already sets `success=False` / `error_message` and whose
+  `finally` already marks sheet progress as 失败. Do not add a dedicated branch for it.
+- The aggregation loop in `process_edc_multithreaded` collects failures into `failed_sheets` and
+  prints one consolidated `⚠️ 共 N 个表单处理失败:` block before saving. Failed sheets are **absent**
+  from the report rather than misrepresented — a missing sheet beats a wrong sheet.
+- Job terminal state stays `completed` when only some sheets fail; this matches the existing
+  "one sheet fails, the run continues" semantics. Do not fail the whole run over one bad sheet.
+
+Tests: `tests/test_sheet_read_failure.py` (including one case driven by a real failure trigger with
+no mocking), plus the `SheetReadError` assertion in `tests/test_processing_control.py`.
+
+---
+
 ## Common Mistakes
 
 - Catching `Exception` and doing nothing in core logic where the failure matters
 - Treating user stop and actual failure as the same path
+- Conflating "not found" with "failed" in a single sentinel return value — give failure its own
+  channel, or the caller will silently take the wrong branch
 - Adding a new persisted config field without a compatibility backfill path
 - Returning vague error text when the code can include the failing sheet/file name
 - Reintroducing old `src.core` or `src.utils` exception examples in new docs or imports

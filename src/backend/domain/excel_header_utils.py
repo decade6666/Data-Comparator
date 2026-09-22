@@ -1,10 +1,27 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import pandas as pd
 from openpyxl import load_workbook
 
 from .processing_control import check_stop_frequently
+
+
+class SheetReadError(Exception):
+    """读取单个 Sheet 失败。与「Sheet 不存在」（返回 None）区分。"""
+
+
+def _is_blank(value: Any) -> bool:
+    """判断值是否为空：None 或去除首尾空白后为空的字符串。"""
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _trim_trailing_empty(values: List[Any]) -> List[Any]:
+    """裁掉行尾部的空值（reset_dimensions 后行宽不齐的善后，做法同 pandas）。"""
+    end = len(values)
+    while end > 0 and _is_blank(values[end - 1]):
+        end -= 1
+    return values[:end]
 
 
 def read_single_sheet_from_excel(
@@ -28,8 +45,11 @@ def read_single_sheet_from_excel(
         cols_to_drop (list, optional): 在读取后需要删除的列名列表。
         stop_flag (threading.Event, optional): 用户停止标志。
     Returns:
-        pd.DataFrame: 读取到的数据DataFrame，包含SAS元数据作为attrs。
-            如果读取失败或Sheet不存在，则返回None。
+        pd.DataFrame: 读取成功时返回数据DataFrame，包含SAS元数据作为attrs。
+        None: 仅当Sheet不存在时返回（读取失败不返回None，见 Raises）。
+    Raises:
+        InterruptedError: 用户停止操作时原样抛出。
+        SheetReadError: 读取过程发生异常时抛出，与「Sheet不存在」的 None 区分。
     """
     try:
         # 使用openpyxl的load_workbook以read_only模式打开，data_only=True确保读取的是显示值而非公式
@@ -109,6 +129,12 @@ def read_single_sheet_from_excel(
                 log_func(f"❌ {msg}")
                 raise ValueError(msg)
 
+        # reset_dimensions 后每行按自己的最后一个单元格定宽，锚点/表头行尾部
+        # 「有样式、无值」的单元格会虚增行宽。按 pandas 同款做法逐行裁掉尾部
+        # 空值（锚点行与表头行各自独立裁，不是两行同位置都为空才裁）。
+        sas_field_label = _trim_trailing_empty(sas_field_label)
+        sas_field_name = _trim_trailing_empty(sas_field_name)
+
         # 逐行读取数据，直到遇到第一个空行，或者读取到最大行数（防止超大文件耗尽内存）
         data_rows = []
         max_rows_to_read = 1000000  # 最大读取行数限制
@@ -133,6 +159,8 @@ def read_single_sheet_from_excel(
                 )
                 break
 
+            # 空行终止判定保持在裁尾之前（全空行裁尾后 all([]) 同样为 True，语义不变）
+            row_values = _trim_trailing_empty(row_values)
             data_rows.append(row_values)  # 添加数据行
 
             if len(data_rows) > max_rows_to_read:  # 如果读取行数超过限制，强制停止
@@ -164,23 +192,38 @@ def read_single_sheet_from_excel(
         if not sas_field_label:  # 如果没有定义SASFieldLabel，则使用SASFieldName作为标签
             sas_field_label = sas_field_name
 
-        # 确保列名长度与实际数据列数一致，进行填充或截断
-        if data_rows:
-            actual_num_cols = max(len(row) for row in data_rows)  # 实际数据列数
-            if len(sas_field_name) < actual_num_cols:
-                sas_field_name.extend(
-                    [
-                        f"Unnamed_{i}"
-                        for i in range(len(sas_field_name), actual_num_cols)
-                    ]
-                )  # 补充Unnamed列名
-            if len(sas_field_label) < actual_num_cols:
-                sas_field_label.extend(
-                    [
-                        f"Unnamed_{i}"
-                        for i in range(len(sas_field_label), actual_num_cols)
-                    ]
-                )  # 补充空标签
+        # 双向列宽对齐（pandas OpenpyxlReader.get_sheet_data 两步法的第 2 步）：
+        # 全局取最大宽度，列名不足补 Unnamed_i（锚点行真实声明的字段名不丢），
+        # 数据行不足补 None（与 _normalize_value 对空单元格的返回值一致）。
+        widths = [len(sas_field_name), len(sas_field_label)]
+        widths += [len(row) for row in data_rows]
+        target_width = max(widths) if widths else 0
+
+        if len(sas_field_name) < target_width:
+            sas_field_name.extend(
+                f"Unnamed_{i}" for i in range(len(sas_field_name), target_width)
+            )
+        if len(sas_field_label) < target_width:
+            sas_field_label.extend(
+                f"Unnamed_{i}" for i in range(len(sas_field_label), target_width)
+            )
+
+        data_rows = [
+            (
+                row
+                if len(row) == target_width
+                else row + [None] * (target_width - len(row))
+            )
+            for row in data_rows
+        ]
+
+        # 消灭残留的空列名（锚点行中段空洞）：空名按绝对下标补 Unnamed_i，
+        # 否则空串/重名列会让下游 df[col]、.loc 的单列访问崩溃或产生幻影差异。
+        # 只规范化 name；label 允许为空，仅用于展示。
+        sas_field_name = [
+            name if (isinstance(name, str) and name.strip()) else f"Unnamed_{i}"
+            for i, name in enumerate(sas_field_name)
+        ]
 
         # 创建DataFrame，指定列名
         # 修正：即使data_rows为空，也使用sas_field_name作为columns，以保留表头信息
@@ -244,10 +287,10 @@ def read_single_sheet_from_excel(
             pass
         raise
     except Exception as e:
-        log_func(f"❌ 读取Sheet [{sheet_name}] 失败: {str(e)}")  # 记录错误日志
         try:
             if "wb" in locals() and wb:  # 尝试关闭可能已打开的工作簿
                 wb.close()
         except Exception:
             pass  # 忽略关闭失败的错误
-        return None
+        # 不返回 None（None 专指「Sheet 不存在」）；日志由上游统一打印，避免一条失败两行日志
+        raise SheetReadError(f"读取Sheet [{sheet_name}] 失败: {e}") from e
