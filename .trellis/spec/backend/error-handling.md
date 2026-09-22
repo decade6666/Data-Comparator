@@ -113,7 +113,8 @@ The codebase often uses sentinel return values instead of custom exceptions when
 Examples:
 
 - `JsonParameterRepository.load_document()` returns `None` when the config file does not exist
-- `read_single_sheet_from_excel()` returns `None` when a sheet is missing or unreadable
+- `read_single_sheet_from_excel()` returns `None` when a sheet **does not exist** — a failed read
+  raises `SheetReadError` instead, see "Sheet Read: Three-State Contract" below
 - `validate_excel_file()` returns `(False, error_text)`
 
 ---
