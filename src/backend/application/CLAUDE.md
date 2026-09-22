@@ -102,6 +102,7 @@
 
 | 时间 | 类型 | 说明 |
 |---|---|---|
+| 2026-09-15 | feat | `JobManager` 新增 `active_job_snapshot`（查当前用户槽位任务，悬空映射带 `stale` 标记）与 `cancel_active_job`（不需要 job_id 的取消；悬空映射直接释放槽位）。`submit()` 的 fail-closed 语义不变。 |
 | 2026-08-23 | feat | 历史记录：任务结束时日志落盘（与报告同时间戳成对），`comparison_history_service.py` 持久化到 `comparison_run` 表（只存 basename、剥离路径与 upload id），经 `JobManager` 的 `on_finished` hook 触发（任务锁外，失败不翻转状态）；`/api/jobs/{id}/log` 供当前任务下载日志。 |
 | 2026-08-23 | fix | 修复排队任务被取消后 `_user_active` 泄漏（用户被永久 409）——早退路径纳入 `finally` 清理。 |
 | 2026-08-18 | feat | 新增 `job_manager.py` 异步任务管理器，接入进度/日志/停止回调。 |

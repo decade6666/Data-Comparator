@@ -323,6 +323,22 @@ class JobStatusResponse(BaseModel):
     error: Optional[str] = None
 
 
+class ActiveJobResponse(BaseModel):
+    """当前用户活跃任务快照；无任务时 active=False，槽位悬空时 stale=True。"""
+
+    active: bool = False
+    stale: bool = False
+    job_id: Optional[str] = None
+    config_name: Optional[str] = None
+    status: Optional[str] = None
+    progress_percent: Optional[float] = None
+    progress_message: Optional[str] = None
+    log_lines: List[str] = Field(default_factory=list)
+    log_cursor: int = 0
+    output_path: Optional[str] = None
+    error: Optional[str] = None
+
+
 class UploadResponse(BaseModel):
     upload_id: str
     filename: str
@@ -658,6 +674,31 @@ async def import_config(
         name, cast(ParameterDocument, document)
     )
     return {"name": name, "imported": True}
+
+
+# 以下两个端点必须声明在 GET /api/jobs/{job_id} 之前：
+# FastAPI 按声明顺序匹配路由，{job_id} 会把 "active" 吃成路径参数。
+@app.get("/api/jobs/active", response_model=ActiveJobResponse)
+def get_active_job(
+    since: int = 0,
+    current_user: User = Depends(get_current_user),
+) -> ActiveJobResponse:
+    """返回当前登录用户的活跃比对任务，供前端页面重开后接管恢复。"""
+    snapshot = _job_manager.active_job_snapshot(current_user.id, since=max(0, since))
+    if snapshot is None:
+        return ActiveJobResponse(active=False)
+    return ActiveJobResponse(active=True, **snapshot)
+
+
+@app.post("/api/jobs/active/cancel")
+def cancel_active_job(
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, str]:
+    """取消当前用户的活跃任务（不需要 job_id），槽位悬空时直接释放。"""
+    job_id = _job_manager.cancel_active_job(current_user.id)
+    if job_id is None:
+        raise HTTPException(status_code=404, detail="当前没有进行中的比对任务")
+    return {"job_id": job_id, "status": "cancelling"}
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)

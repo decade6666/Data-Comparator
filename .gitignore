@@ -104,3 +104,10 @@ frontend/node_modules/
 frontend/dist/
 frontend/*.local
 .claude/worktrees/
+
+# Secrets (local only, never commit)
+secret.env
+
+# Local data backup archives
+/dataset-comparator-data-*.tar.gz
+/dataset-comparator-data-*.tar.gz.sha256

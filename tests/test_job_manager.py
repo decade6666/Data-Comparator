@@ -675,3 +675,111 @@ def test_begin_project_rename_rejected_while_rename_in_flight(monkeypatch) -> No
     manager.end_project_rename(1)
     assert manager.begin_project_rename(1, "B") is True
     manager.end_project_rename(1)
+
+
+def test_active_job_snapshot_includes_config_name(monkeypatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        started.set()
+        release.wait(10)
+        return "/tmp/out/report.xlsx"
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+    manager = JobManager()
+
+    # 无任务时返回 None
+    assert manager.active_job_snapshot(user_id=1) is None
+
+    job = manager.submit(MINIMAL_PARAMS, config_name="CIMS", user_id=1)
+    assert started.wait(10)
+
+    snapshot = manager.active_job_snapshot(user_id=1)
+    assert snapshot is not None
+    assert snapshot["stale"] is False
+    assert snapshot["job_id"] == job.job_id
+    assert snapshot["config_name"] == "CIMS"
+    assert snapshot["status"] in ("pending", "running")
+    assert snapshot["log_cursor"] == 0
+
+    release.set()
+    _wait_for_terminal(job)
+    assert manager.active_job_snapshot(user_id=1) is None
+    manager.stop()
+
+
+def test_cancel_active_job_sets_stop_flag(monkeypatch) -> None:
+    flag_holder = {}
+    started = threading.Event()
+
+    def fake_run_comparison(
+        parameters,
+        config_name="web",
+        log_func=None,
+        progress_func=None,
+        stop_flag=None,
+        work_dir=None,
+        now=None,
+    ):
+        flag_holder["flag"] = stop_flag
+        started.set()
+        stop_flag.wait(10)
+        raise InterruptedError("用户停止了操作")
+
+    _install_fake_run_comparison(monkeypatch, fake_run_comparison)
+    manager = JobManager()
+
+    # 无任务时返回 None
+    assert manager.cancel_active_job(user_id=1) is None
+
+    job = manager.submit(MINIMAL_PARAMS, user_id=1)
+    assert started.wait(10)
+
+    assert manager.cancel_active_job(user_id=1) == job.job_id
+    assert flag_holder["flag"].is_set()
+    assert _wait_for_terminal(job) == JobStatus.CANCELLED
+    assert not manager.has_active_job()
+    manager.stop()
+
+
+def test_dangling_user_active_fail_closed_then_active_cancel_releases(
+    monkeypatch,
+) -> None:
+    """回归：槽位映射悬空时 submit 保持 fail closed（409），
+    cancel_active_job 是唯一的显式恢复路径。"""
+    _install_fake_run_comparison(
+        monkeypatch,
+        lambda *args, **kwargs: "/tmp/out/report.xlsx",
+    )
+    manager = JobManager()
+
+    job = manager.submit(MINIMAL_PARAMS, user_id=1)
+    _wait_for_terminal(job)
+
+    # 手工制造悬空映射：槽位有值、注册表无对应任务
+    with manager._lock:
+        manager._user_active[1] = job.job_id
+        del manager._jobs[job.job_id]
+
+    with pytest.raises(ValueError, match="已有比对任务正在运行"):
+        manager.submit(MINIMAL_PARAMS, user_id=1)
+
+    # 悬空快照带 stale 标记
+    snapshot = manager.active_job_snapshot(user_id=1)
+    assert snapshot == {"job_id": job.job_id, "stale": True}
+
+    # 显式清除后可重新提交
+    assert manager.cancel_active_job(user_id=1) == job.job_id
+    assert not manager.has_active_job()
+    new_job = manager.submit(MINIMAL_PARAMS, user_id=1)
+    _wait_for_terminal(new_job)
+    manager.stop()

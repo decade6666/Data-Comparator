@@ -131,6 +131,26 @@ It keeps the API contract thin by translating application/domain exceptions into
 - `OSError` and `RuntimeError` map to `500`
 - unexpected exceptions map to `500` with a generic comparison-failure prefix
 
+### Route-ordering rule: literal path segments before `{param}` (since 2026-09-15)
+
+`GET /api/jobs/active` and `POST /api/jobs/active/cancel` MUST be declared before
+`GET /api/jobs/{job_id}` / `POST /api/jobs/{job_id}/cancel` in `web_api.py`.
+FastAPI matches routes in declaration order; a literal route declared after the
+parameterized one is swallowed (`"active"` becomes the `job_id` and the request
+404s). The in-file comment above the two endpoints locks this in — keep it when
+adding more literal job subroutes.
+
+### Active-job fallback endpoints (since 2026-09-15)
+
+- `GET /api/jobs/active` returns the current user's active-job snapshot
+  (`active:false` when idle, `stale:true` when the `_user_active` slot points at
+  a job missing from the registry).
+- `POST /api/jobs/active/cancel` returns `404` ("当前没有进行中的比对任务") when
+  the user has no active job; it cancels without needing a job id and releases a
+  dangling slot directly.
+- `JobManager.submit()` keeps its fail-closed semantics for dangling slots: the
+  only recovery path is the explicit `active/cancel`, never auto-healing.
+
 ### Scenario: Web comparison API boundary
 
 #### 1. Scope / Trigger

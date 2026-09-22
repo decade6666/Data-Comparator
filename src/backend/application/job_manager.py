@@ -266,6 +266,44 @@ class JobManager:
         job.stop_flag.set()
         return job
 
+    def active_job_snapshot(self, user_id: int, since: int = 0) -> Optional[dict]:
+        """返回该用户当前占用槽位的任务快照；无任务返回 None。
+
+        槽位映射悬空（job 已不在注册表）时返回 ``stale`` 标记：
+        ``submit()`` 对悬空映射 fail closed，前端需据此引导用户显式清除。
+        """
+        with self._lock:
+            job_id = self._user_active.get(user_id)
+            job = self._jobs.get(job_id) if job_id else None
+        if job_id is None:
+            return None
+        if job is None:
+            return {"job_id": job_id, "stale": True}
+        snapshot = self.snapshot(job.job_id, since=since, user_id=user_id)
+        if snapshot is None:
+            return None
+        snapshot["config_name"] = job.config_name
+        snapshot["stale"] = False
+        return snapshot
+
+    def cancel_active_job(self, user_id: int) -> Optional[str]:
+        """取消该用户的活跃任务，不需要 job_id；返回任务 id，无任务返回 None。
+
+        映射悬空时直接释放槽位——没有线程会再来 finalize 这条映射，
+        只能在此清除（``_finalize_job`` 删除前有等值判断，不会误删后续映射）。
+        正常任务则置位停止标志，槽位照常由 finalize 释放。
+        """
+        with self._lock:
+            job_id = self._user_active.get(user_id)
+            if job_id is None:
+                return None
+            job = self._jobs.get(job_id)
+            if job is None:
+                del self._user_active[user_id]
+                return job_id
+        job.stop_flag.set()
+        return job_id
+
     def get_log_lines(
         self, job_id: str, since: int = 0, user_id: Optional[int] = None
     ) -> Tuple[List[str], int]:

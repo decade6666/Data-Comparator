@@ -89,7 +89,9 @@ async function request(method, path, options = {}) {
     } catch (_err) {
       // 保留默认错误信息
     }
-    throw new Error(detail)
+    const error = new Error(detail)
+    error.status = response.status // 调用方按状态码分支（如 409 兜底），不做文案匹配
+    throw error
   }
   return response
 }

@@ -1,14 +1,14 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Moon, Sunny, Setting, QuestionFilled } from '@element-plus/icons-vue'
 import { useTheme } from './composables/useTheme'
 import { useSidebarResize } from './composables/useSidebarResize'
 import { useJob } from './composables/useJob'
 import { api } from './composables/useApi'
 import { useAutoDownload } from './composables/useAutoDownload'
-import { config, buildJobPayload } from './composables/useConfig'
-import { autoSaveBeforeStart } from './composables/useConfigState'
+import { config, buildJobPayload, listConfigs } from './composables/useConfig'
+import { adoptActiveJob, autoSaveBeforeStart, currentName } from './composables/useConfigState'
 import { resetAllJobs } from './composables/useJob'
 import { useAuth } from './composables/useAuth'
 import { useSheets } from './composables/useSheets'
@@ -69,7 +69,56 @@ async function startCompare() {
     if (!savedName) return
     await job.submit(buildJobPayload())
   } catch (err) {
-    ElMessage.error(err.message)
+    // 兜底：409 表示槽位被进行中任务（或残留占位）占用。先尝试接管恢复
+    // 进度；接管不了才询问用户是否取消重跑。
+    if (err.status === 409) {
+      // 先尝试接管进行中的任务恢复进度；接管不了才询问取消
+      try {
+        let names = []
+        try {
+          const body = await listConfigs()
+          names = body.configs
+        } catch (_err) {
+          // 列表拉取失败不阻塞接管（会走仅恢复任务桶的分支）
+        }
+        const outcome = await adoptActiveJob(names)
+        if (outcome === true) {
+          ElMessage.info(`已切换到进行中的比对：${currentName.value || '未命名项目'}`)
+          return
+        }
+        if (outcome === 'stale') {
+          await job.cancelActive()
+          await job.submit(buildJobPayload())
+          return
+        }
+        if (outcome === 'none') {
+          // 409 与查询之间的竞态：任务刚结束，直接重试
+          await job.submit(buildJobPayload())
+          return
+        }
+        // 'unavailable'：老后端无接管端点，落到下方确认框
+      } catch (recoverErr) {
+        ElMessage.error(recoverErr.message)
+        return
+      }
+      try {
+        await ElMessageBox.confirm(
+          '检测到有比对任务正在运行或残留。是否取消它并重新开始？',
+          '已有比对任务',
+          { type: 'warning', confirmButtonText: '取消并重新开始', cancelButtonText: '返回' }
+        )
+      } catch (_dismiss) {
+        return
+      }
+      try {
+        await job.cancelActive()
+        await job.submit(buildJobPayload())
+      } catch (retryErr) {
+        ElMessage.error(retryErr.message)
+      }
+    } else {
+      ElMessage.error(err.message)
+    }
   }
 }
 

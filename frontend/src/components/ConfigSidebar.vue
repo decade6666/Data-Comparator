@@ -16,7 +16,7 @@ import {
   currentName,
   openEditConfigDialog,
   openNewConfigDialog,
-  restoreLastConfig,
+  restoreActiveJob,
   saveConfig,
   selectConfig,
 } from '../composables/useConfigState'
@@ -26,7 +26,7 @@ import {
   copyConfig,
   renameConfig,
 } from '../composables/useConfig'
-import { dropJob, renameJob } from '../composables/useJob'
+import { cancelActive, dropJob, renameJob } from '../composables/useJob'
 
 const configs = ref([])
 const userConfigs = computed(() =>
@@ -161,8 +161,23 @@ watch(currentName, (name, previousName) => {
 onMounted(async () => {
   try {
     await refresh()
-    const restored = await restoreLastConfig(userConfigs.value)
-    if (restored) ElMessage.success(`已恢复项目：${currentName.value}`)
+    // 接管后端仍在跑的比对任务优先于恢复上次项目；无任务/接口不可用时
+    // restoreActiveJob 内部回落 restoreLastConfig。
+    const adopted = await restoreActiveJob(userConfigs.value)
+    if (adopted === true) {
+      ElMessage.info(`已接管进行中的比对：${currentName.value || '未命名项目'}`)
+    } else if (adopted === 'stale') {
+      // stale 时不显示停止按钮（没有可看的任务），提示「点停止」行不通；
+      // 占位残留会让后续提交一直 409，直接自动清除。
+      try {
+        await cancelActive()
+        ElMessage.warning('检测到残留的比对占位任务，已自动清除')
+      } catch (_err) {
+        ElMessage.warning('检测到残留的比对占位任务')
+      }
+    } else if (currentName.value) {
+      ElMessage.success(`已恢复项目：${currentName.value}`)
+    }
   } catch (err) {
     ElMessage.error(err.message)
   }
