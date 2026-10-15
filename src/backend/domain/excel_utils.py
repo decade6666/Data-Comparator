@@ -70,7 +70,8 @@ def apply_highlight_to_worksheet(
     stop_flag=None,
 ):
     """根据比对结果为工作表（包括表头、单元格和Sheet标签）应用高亮和颜色标记。
-    "更新"的行只高亮有变化的单元格，"新增"或"删除"的行则高亮整行，并相应标记列的增删。
+    "更新"的行只高亮有变化的单元格，"新增"的行整行使用配置的新增色，"删除"的行
+    整行保持更新色，并相应标记列的增删。
 
     Args:
         ws (openpyxl.worksheet.worksheet.Worksheet): Openpyxl工作表对象，比对结果将应用到此工作表。
@@ -156,8 +157,14 @@ def apply_highlight_to_worksheet(
             mark_cell.font = Font(
                 bold=True, color="FFFF0000"
             )  # 将标记列字体加粗并设为红色
+            # 整行填充按标记选色：新增行用配置的新增色，删除行保持更新色
+            row_fill = (
+                config.new_sheet_tab_fill
+                if mark_value == "新增"
+                else config.highlight_fill
+            )
             for cell in row:  # 对于新增或删除的行，高亮显示整行的所有单元格
-                cell.fill = config.highlight_fill
+                cell.fill = row_fill
         elif mark_value == "更新":
             mark_cell.font = Font(
                 bold=True, color="FFFF0000"
