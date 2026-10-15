@@ -1,0 +1,33 @@
+{
+  "id": "fix-added-row-colors",
+  "name": "fix-added-row-colors",
+  "title": "Use configured addition color for new rows",
+  "description": "Fix added-row fills using the existing addition color; preserve sheet tabs, added-column headers, and unrelated highlighting.",
+  "status": "completed",
+  "dev_type": "backend",
+  "scope": "domain",
+  "package": null,
+  "priority": "P2",
+  "creator": "decade6666",
+  "assignee": "decade6666",
+  "createdAt": "2026-10-15",
+  "completedAt": "2026-10-15",
+  "branch": "plan/addition-colors",
+  "base_branch": "main",
+  "worktree_path": "/home/decade/Data-Comparator-addition-color-plan",
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/backend/domain/excel_utils.py",
+    "tests/test_highlight_colors.py",
+    ".trellis/spec/backend/excel-data-guidelines.md"
+  ],
+  "notes": "Executed 2026-10-15 in this worktree with user approval: RED/GREEN complete, 342 tests passing, coverage 84% (no decrease vs 84% baseline), independent trellis-check 7/7. Awaiting user-authorized commit/merge per Trellis finish flow. Do not touch pre-existing Trellis changes in the original main checkout.",
+  "meta": {
+    "handoff_executor": "sonnet",
+    "plan_review": "approved_and_executed"
+  }
+}

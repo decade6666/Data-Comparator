@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Preserve Python 3.8 compatibility, scoped tests, strict markers, layer boundaries, and cancellation behavior."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing ConfigManager fills and the shared highlighter; avoid a new color configuration or parallel implementation."}
+{"file": ".trellis/tasks/10-15-fix-added-row-colors/research/color-flow.md", "reason": "Verified source anchors, existing regression helpers, and exact addition-only scope for the implementation."}

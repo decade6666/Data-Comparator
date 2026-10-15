@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify focused/full tests, coverage evidence, bounded changes, strict markers, and stop-propagation compatibility."}
+{"file": ".trellis/tasks/10-15-fix-added-row-colors/research/color-flow.md", "reason": "Review the addition-only color matrix against source evidence and ensure existing deletion/update/tab/header behavior stays intact."}
