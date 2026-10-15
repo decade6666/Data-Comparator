@@ -1,6 +1,6 @@
 ---
 name: trellis-break-loop
-description: "深入分析缺陷，打破反复复发的循环：归类根因、复盘修复失效原因、给出预防手段，并把经验沉淀进项目规范。用于修完缺陷、防止同类问题再现时。"
+description: "Deep bug analysis to break the fix-forget-repeat cycle. Analyzes root cause category, why fixes failed, prevention mechanisms, and captures knowledge into specs. Use after fixing a bug to prevent the same class of bugs."
 ---
 
 # Break the Loop - Deep Bug Analysis

@@ -1,6 +1,6 @@
 ---
 name: trellis-before-dev
-description: "动手写代码前，读取 .trellis/spec/ 中的项目规范、开发前检查清单与所属模块指引并注入上下文。用于开始编码、切换模块或重温项目约定时。"
+description: "Discovers and injects project-specific coding guidelines from .trellis/spec/ before implementation begins. Reads spec indexes, pre-development checklists, and shared thinking guides for the target package. Use when starting a new coding task, before writing any code, switching to a different package, or needing to refresh project conventions and standards."
 ---
 
 Read the relevant development guidelines before starting your task.
@@ -35,6 +35,17 @@ Execute these steps:
    cat .trellis/spec/guides/index.md
    ```
 
-7. Understand the coding standards and patterns you need to follow, then proceed with your development plan.
+7. **For a non-trivial task, state the change boundary before writing code.** Non-trivial means it touches more than one file, crosses a layer, changes a public interface, or edits code you did not just write. Write down:
+   - the smallest behavior gap between what happens now and what should happen
+   - where that behavior actually lives (not where it is easiest to intercept)
+   - which files you expect to change, and why each one is necessary
+   - what you are explicitly not doing in this task
+   - if a local refactor is needed, how you will show it did not change behavior
+
+   A small, well-scoped change does not need this — do it directly.
+
+   If the real scope turns out to be clearly larger than this, say so and why before continuing. Do not widen the change on your own.
+
+8. Understand the coding standards and patterns you need to follow, then proceed with your development plan.
 
 This step is **mandatory** before writing any code.

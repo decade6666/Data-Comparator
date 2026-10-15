@@ -110,23 +110,35 @@ channel:
 #-------------------------------------------------------------------------------
 # Codex (dispatch behavior)
 #-------------------------------------------------------------------------------
-# Codex-only knob; other platforms ignore it. Default ("inline") makes the
-# main Codex agent edit code directly because Codex sub-agents run with
-# `fork_turns="none"` isolation and can't inherit the parent session's
-# task context. Set to "sub-agent" to opt into the legacy dispatch model
-# (main agent spawns trellis-implement / trellis-check / trellis-research
-# sub-agents).
+# Codex-only knob; other platforms ignore it. Default ("auto") dispatches
+# trellis-implement / trellis-check / trellis-research sub-agents. This does
+# not rely on inherited parent transcripts: `fork_turns` remains
+# caller-controlled, while Codex's native SubagentStart hook injects task
+# context when trusted and child-side loading remains the fallback when it is
+# unavailable. Set to "inline" only to keep implementation and checks in the
+# main session. "sub-agent" remains a backwards-compatible alias for "auto".
+# Invalid explicit values safely use inline mode.
+#
+# In "auto" mode, dispatched sub-agents inherit the main session's model
+# unless you pin one. To use a cheaper/faster model for implement/check/
+# research sub-agent work, edit `model` / `model_reasoning_effort` directly
+# on the generated `.codex/agents/trellis-*.toml` files (see the commented
+# hint lines in those files) — there is no config.yaml knob for this,
+# `trellis update` preserves your edits across regeneration.
 #
 # codex:
-#   dispatch_mode: inline  # or "sub-agent" to dispatch trellis-* sub-agents
+#   dispatch_mode: auto  # or "inline"; legacy alias: "sub-agent"
 
 #-------------------------------------------------------------------------------
 # Sub-agent context injection limits
 #-------------------------------------------------------------------------------
-# Caps for implement/check JSONL-referenced files and task artifacts
-# (prd/design/implement.md). 0 disables the corresponding limit. Overflow
-# degrades remaining blocks to index notices (path + size + reason) instead of
-# inlining bodies. Binary content (NUL or invalid UTF-8) is never inlined.
+# Caps how much task context (implement.jsonl / check.jsonl referenced files,
+# plus prd.md / design.md / implement.md) gets inlined into a sub-agent's
+# first prompt. Oversized files are truncated with a notice; once the total
+# payload cap is reached, remaining files degrade to index lines (path +
+# reason + size) instead of being inlined.
+#
+# All values are byte counts. `0` disables the corresponding limit.
 #
 # context_injection:
 #   max_file_bytes: 32768        # per implement.jsonl / check.jsonl referenced file
@@ -144,40 +156,3 @@ channel:
 #
 # prompt_injection:
 #   skip_keyword: "no-trellis"   # "" disables the escape hatch entirely
-
-#-------------------------------------------------------------------------------
-# Multi-model collaboration (opt-in; default OFF)
-#-------------------------------------------------------------------------------
-# When collab.enabled is false (default), all collab.* flags are ignored and
-# Trellis behaves exactly as today. Enable only when the project has working
-# second-model drivers and wants dual-model analysis / codex-led implement /
-# three-way cross-review.
-#
-# collab:
-#   enabled: false
-#   dual_model_analysis: false
-#   codex_led_implement: false
-#   cross_review: false
-#   codex_led_spec_update: false
-#   second_model:
-#     provider: antigravity
-#     # Default driver: codeagent-wrapper --backend agy (Trellis-bundled wrapper).
-#     # On PATH after `npm install -g @decade666/trellis`; also still bundled as
-#     # package bin/codeagent-wrapper.mjs (sibling of the trellis binary).
-#     # When safe, global install also creates ~/.claude/bin/codeagent-wrapper
-#     # for external Claude/CCG. Trellis runtime does NOT scan home bin
-#     # (bundled → PATH only). Existing file/custom/live links are preserved.
-#     # Limits: npm global only; --ignore-scripts / Windows / missing safe
-#     # directory-fd path (for example /proc/self/fd) / unsafe HOME skip;
-#     # no uninstall cleanup. Verify: readlink ~/.claude/bin/codeagent-wrapper
-#     # Bundled wrapper supports --backend agy|codex|claude|grok|kimi.
-#     driver: codeagent-wrapper
-#     # Optional override via env TRELLIS_CODEAGENT_WRAPPER or yaml wrapper_path:
-#     # wrapper_path: /abs/path/to/codeagent-wrapper.mjs
-#     # wrapper_backend: agy
-#     # Alt: OpenAI-compatible CLIProxyAPI (no agy CLI needed)
-#     # driver: cliproxy
-#     # cliproxy_base_url: "http://127.0.0.1:8317"
-#     # cliproxy_model: gemini-3.5-flash-low
-#     # Prefer env CLIPROXY_API_KEY / TRELLIS_CLIPROXY_API_KEY over yaml
-#     # cliproxy_api_key: ""

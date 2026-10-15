@@ -1,6 +1,6 @@
 ---
 name: trellis-update-spec
-description: "把可执行约定与编码规范沉淀进 .trellis/spec/ 文档。用于调试、实现或讨论中得到值得长期保留的经验时。"
+description: "Captures executable contracts and coding conventions into .trellis/spec/ documents. Use when learning something valuable from debugging, implementing, or discussion that should be preserved for future sessions."
 ---
 
 # Update Code-Spec - Capture Executable Contracts
