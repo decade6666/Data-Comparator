@@ -119,3 +119,39 @@ asymmetrically, and — if an anchor key falls in the truncated range — nullif
 degrading the merge into a same-key cartesian product.
 
 ---
+
+## Row / Header / Tab Color Contract
+
+The single write-back path for report coloring is `apply_highlight_to_worksheet`
+(`src/backend/domain/excel_utils.py`), called from the shared writer in
+`process_edc_multithreaded` for common, new-only, and empty-to-populated sheets alike.
+The three persisted settings reach it through `ConfigManager`: `highlight_fill` (更新),
+`missing_sheet_tab_fill` (删除), `new_sheet_tab_fill` (新增, default `#00FF00`).
+
+| Report element | Fill/color |
+| --- | --- |
+| Data row marked 新增 (marker cell and blank cells included) | `config.new_sheet_tab_fill` on every cell |
+| Data row marked 删除 | `config.highlight_fill` on every cell |
+| Data row marked 更新 | `config.highlight_fill` only on columns named in its positional diff entry |
+| Unchanged cells | no fill |
+| Added / deleted column header | `new_sheet_tab_fill` / `missing_sheet_tab_fill`, resolved by SAS field name, not the displayed label |
+| Ordinary header (including a new sheet's headers) | built-in blue `A6C9EC` |
+| Sheet tab | new → `new_sheet_tab_fill`, missing → `missing_sheet_tab_fill`, data_changed → `highlight_fill` (set in `process_edc_multithreaded`) |
+
+Constraints verified by `tests/test_highlight_colors.py`:
+
+- Whole-row additions are decided by the row marker alone, not by sheet type or cell-level flags.
+  New-only and empty-to-populated sheets route through `process_new_sheet` and reach the same
+  shared highlighter, so one fill-selection change covers all three sheet paths. `SheetProcessResult`
+  leaves `add_sas_names` empty for those branches, which is why a new sheet's ordinary headers
+  stay blue — do not "fix" that by populating the list.
+- Do not collapse the 新增/删除 branch back to a single shared fill: added rows use the addition
+  color while deleted rows keep the update color.
+- `diff_keys` normalization stays outside the row loop; the `data_row_idx = row_idx - 2`
+  positional lookup and the in-loop `check_stop` calls are load-bearing (see the alignment and
+  stop/perf suites).
+- Color tests must assert exact solid ARGB, not just fill presence. `ConfigManager` normalizes
+  6-digit hex to `FF`-prefixed ARGB, while raw 6-digit `PatternFill` values get a `00` prefix from
+  openpyxl — compare cells against the config object's own normalized value.
+
+---
